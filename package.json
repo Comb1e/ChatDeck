@@ -6,7 +6,7 @@
   "author": "CYK",
   "license": "MIT",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "electron-vite dev --watch",
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "vue-tsc --noEmit -p tsconfig.node.json && vue-tsc --noEmit -p tsconfig.web.json",

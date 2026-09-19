@@ -33,6 +33,7 @@ function initial(name: string): string {
 
 function paneStyle(rect: Rect): Record<string, string> {
   return {
+    position: 'fixed',
     left: `${rect.x}px`,
     top: `${rect.y}px`,
     width: `${rect.width}px`,
@@ -42,13 +43,13 @@ function paneStyle(rect: Rect): Record<string, string> {
 
 function headerStyle(rect: Rect): Record<string, string> {
   return {
+    position: 'fixed',
     left: `${rect.x}px`,
     top: `${rect.y}px`,
     width: `${rect.width}px`,
     height: `${HEADER_H}px`
   }
 }
-
 function dividerStyle(i: number): Record<string, string> {
   const rects = layout.paneRects
   const left = rects[i]
@@ -56,6 +57,7 @@ function dividerStyle(i: number): Record<string, string> {
   const x = left.rect.x + left.rect.width
   const width = right.rect.x - x
   return {
+    position: 'fixed',
     left: `${x}px`,
     top: `${left.rect.y + HEADER_H}px`,
     width: `${Math.max(0, width)}px`,
@@ -304,12 +306,10 @@ onBeforeUnmount(() => {
 }
 
 .pane {
-  position: absolute;
   background: var(--bg);
 }
 
 .pane-header {
-  position: absolute;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -371,7 +371,6 @@ onBeforeUnmount(() => {
 }
 
 .divider {
-  position: absolute;
   cursor: col-resize;
   z-index: 3;
   touch-action: none;

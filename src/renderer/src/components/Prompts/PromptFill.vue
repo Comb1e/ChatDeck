@@ -23,19 +23,23 @@ const complete = computed(() => names.every((n) => fields[n].trim().length > 0))
 
 async function finish(): Promise<void> {
   if (!target) return
-  const text = renderContent(target.prompt.content, fields)
-  await window.api.clipboard.writeText(text)
-  if (target.pasteAfter) {
-    const id = layout.activeId
-    if (!id) {
-      ui.showToast('当前没有活动站点')
-      return
+  try {
+    const text = renderContent(target.prompt.content, fields)
+    await window.api.clipboard.writeText(text)
+    if (target.pasteAfter) {
+      const id = layout.activeId
+      if (!id) {
+        ui.showToast('当前没有活动站点')
+        return
+      }
+      ui.close()
+      window.api.view.paste(id)
+      ui.showToast('已复制，正在粘贴到当前站点（若无效请手动 Ctrl+V）')
+    } else {
+      ui.showToast('已复制到剪贴板')
     }
-    ui.close()
-    window.api.view.paste(id)
-    ui.showToast('已复制，正在粘贴到当前站点（若无效请手动 Ctrl+V）')
-  } else {
-    ui.showToast('已复制到剪贴板')
+  } catch (err) {
+    ui.showToast(`失败: ${String(err)}`)
   }
 }
 </script>

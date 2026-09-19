@@ -48,6 +48,7 @@ export class ViewManager {
   /** 应用布局：出现在 entries 中的视图被挂载并定位，其余从窗口移除（保留缓存） */
   setLayout(entries: PaneLayoutEntry[]): void {
     if (!this.win) return
+    // 渲染层页面坐标即 contentView 子视图坐标（二者同以内容区为原点），直接使用
     const wanted = new Set<string>()
     for (const entry of entries) {
       if (wanted.has(entry.id)) continue // 防御：同一站点不能出现在两个窗格

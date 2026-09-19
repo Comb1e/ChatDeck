@@ -33,6 +33,10 @@ export default defineConfig({
   },
   renderer: {
     plugins: [vue()],
+    // 显式绑定 IPv4，避免 Electron(Chromium) 与 Node 对 localhost 解析不一致导致连接被拒
+    server: {
+      host: '127.0.0.1'
+    },
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer/src'),

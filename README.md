@@ -8,6 +8,10 @@
 - **提示词库**：内置 26 条预设（翻译、代码审查、周报、深度分析……），支持占位符填空、一键复制/粘贴到当前站点，可自由增删改。
 - **可配置**：站点可在设置中启停、自定义添加（名称 + 网址 + 图标色）；所有配置本地保存。
 
+## 运行
+
+**直接使用**：双击 `dist/ChatDeck-<版本>-Portable.exe`（免安装单文件），或运行 `dist/ChatDeck-Setup-<版本>.exe` 一键安装（自动创建桌面快捷方式）。exe 未做代码签名，首次运行若遇 SmartScreen 提示，点「更多信息 → 仍要运行」。
+
 ## 开发
 
 ```bash
@@ -17,6 +21,8 @@ npm test           # 单元测试（49 个）
 npm run typecheck  # 类型检查
 npm run build      # 构建产物（out/）
 npm start          # 运行构建产物
+npm run dist       # 打包 Windows exe（portable + 安装器，输出到 dist/）
+npm run icon       # 重新生成应用图标（build/icon.ico）
 ```
 
 ## 快捷键

@@ -100,12 +100,30 @@ single ⇄ split2 ⇄ split3
 
 ```
 resources/            内置默认配置 + 错误页（打包时需 extraResources）
+scripts/              开发期工具（make-icon.mjs 生成应用图标）
+build/                打包资源（icon.ico，electron-builder 默认 buildResources 目录）
 src/shared/           前后端共享：类型、IPC 常量、纯函数（merge/layout/viewState/prompts）、API 接口
 src/main/             主进程：窗口、ViewManager、IPC、三个 store（providers/prompts/state）
 src/preload/          contextBridge：index.ts（主 API）、error.ts（错误页重试）
 src/renderer/         界面：Sidebar / Workspace / Drawer（提示词库、设置）
 tests/                Vitest 单测（只测 shared 纯函数，49 个用例）
 ```
+
+## 打包与分发（electron-builder）
+
+`npm run dist` = `electron-vite build` + `electron-builder --win`，配置在 `electron-builder.yml`：
+
+```
+app.asar（out/** 打包）        安装目录/resources/（extraResources 平铺）
+├─ out/main/index.js           ├─ providers.default.json   ← resourceFile() 读这里
+├─ out/preload/{index,error}.js ├─ prompts.default.json       (process.resourcesPath)
+└─ out/renderer/index.html     └─ error.html              ← viewManager.errorPagePath()
+```
+
+- 产物：`dist/ChatDeck-<ver>-Portable.exe`（免安装双击即用）与 `dist/ChatDeck-Setup-<ver>.exe`（一键安装，per-user）。
+- 关键约束：extraResources 的 `to` 必须是 `.`（写成 `resources` 会多套一层，运行时读不到）。
+- userData 不变（`%APPDATA%/chatdeck`），打包版与开发版登录态互通。
+- 单实例锁在打包版同样生效：重复启动只聚焦已有窗口。
 
 ## 持久化位置（%APPDATA%/chatdeck/）
 

@@ -1,0 +1,28 @@
+:root {
+  /* Claude 风格设计令牌 */
+  --bg: #faf9f5;
+  --bg-sidebar: #f2f0e9;
+  --bg-card: #ffffff;
+  --bg-hover: #ebe8df;
+  --bg-active: #e8e4d8;
+  --text: #3d3929;
+  --text-secondary: #6b6659;
+  --text-faint: #b0aa9a;
+  --accent: #d97757;
+  --accent-hover: #c2603f;
+  --accent-soft: rgba(217, 119, 87, 0.12);
+  --border: #e5e2d9;
+  --border-strong: #d8d4c8;
+  --danger: #b3423a;
+
+  --font-serif: Georgia, 'Times New Roman', STZhongsong, SimSun, serif;
+  --font-sans: -apple-system, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  --font-mono: Consolas, 'Courier New', monospace;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --sidebar-w: 236px;
+  --drawer-w: 400px;
+  --toolbar-h: 44px;
+  --shadow-drawer: -12px 0 32px rgba(61, 57, 41, 0.08);
+}

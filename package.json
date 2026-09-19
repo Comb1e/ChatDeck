@@ -1,0 +1,30 @@
+{
+  "name": "chatdeck",
+  "version": "0.1.0",
+  "description": "ChatDeck — 国内大模型聚合工作台",
+  "main": "./out/main/index.js",
+  "author": "CYK",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.node.json && vue-tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "pinia": "^2.3.1",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@types/node": "^22.10.0",
+    "electron": "^33.4.11",
+    "electron-vite": "^3.1.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.2.0",
+    "vitest": "^3.0.9",
+    "vue-tsc": "^2.2.8"
+  }
+}

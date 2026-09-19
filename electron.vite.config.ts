@@ -45,10 +45,11 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
-        // 双 HTML 入口:index.html=桌面版,float.html=悬浮窗
+        // 多 HTML 入口:index.html=桌面版,float.html=悬浮窗,translate.html=译文弹窗
         input: {
           index: resolve('src/renderer/index.html'),
-          float: resolve('src/renderer/float.html')
+          float: resolve('src/renderer/float.html'),
+          translate: resolve('src/renderer/translate.html')
         }
       }
     }

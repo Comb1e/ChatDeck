@@ -37,11 +37,19 @@ export const IPC = {
 
   ClipboardWrite: 'clipboard:write',
 
+  // 划词翻译(配置在主窗口设置填写;结果推给译文弹窗渲染层)
+  TranslateGetConfig: 'translate:get-config',
+  TranslateSaveConfig: 'translate:save-config',
+  TranslateSetPair: 'translate:set-pair',
+  TranslateGetLast: 'translate:get-last',
+  TranslateHide: 'translate:hide',
+
   // 主进程 → 渲染层事件
   EvTitleChanged: 'ev:title-changed',
   EvActiveChanged: 'ev:active-changed',
   EvLoadStateChanged: 'ev:load-state-changed',
   EvFTitleChanged: 'ev:f-title-changed',
   EvFActiveChanged: 'ev:f-active-changed',
-  EvFLoadStateChanged: 'ev:f-load-state-changed'
+  EvFLoadStateChanged: 'ev:f-load-state-changed',
+  EvTranslateResult: 'ev:translate-result'
 } as const

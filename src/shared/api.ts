@@ -7,6 +7,7 @@ import type {
   UiState,
   ViewLoadState
 } from './types'
+import type { TranslateConfig, TranslatePairId, TranslatePopupState } from './translate'
 
 /** 渲染层可用的宿主 API（preload 经 contextBridge 暴露，结构以本接口为准） */
 export interface DeckApi {
@@ -57,10 +58,23 @@ export interface DeckApi {
   clipboard: {
     writeText(text: string): Promise<boolean>
   }
+  /** 划词翻译(设置表单与译文弹窗共用同一 preload) */
+  translate: {
+    getConfig(): Promise<TranslateConfig>
+    /** 保存 APPID/KEY;pair 由 setPair 单独维护 */
+    saveConfig(input: { appId: string; appKey: string }): Promise<TranslateConfig>
+    /** 弹窗方向选择器:切换语言方向对并持久化 */
+    setPair(pair: TranslatePairId): void
+    /** 弹窗冷启动兜底:取最近一次推送的状态 */
+    getLast(): Promise<TranslatePopupState | null>
+    hide(): Promise<boolean>
+  }
   on: {
     titleChanged(cb: (e: { id: string; title: string }) => void): void
     activeChanged(cb: (e: { id: string }) => void): void
     loadStateChanged(cb: (e: { id: string; state: ViewLoadState }) => void): void
+    /** 仅译文弹窗渲染层会收到(主进程只发给弹窗 webContents) */
+    translateResult(cb: (state: TranslatePopupState) => void): void
   }
   onF: {
     titleChanged(cb: (e: { id: string; title: string }) => void): void

@@ -6,6 +6,8 @@ import type { PromptStore } from './store/promptStore'
 import type { StateStore } from './store/stateStore'
 import type { ViewManager } from './viewManager'
 import type { FloatWindowController } from './floatWindow'
+import type { TranslateService } from './translateService'
+import type { TranslatePopupController } from './translateWindow'
 
 export interface IpcDeps {
   providers: ProviderStore
@@ -14,11 +16,13 @@ export interface IpcDeps {
   views: ViewManager
   floatViews: ViewManager
   floatWin: FloatWindowController
+  translate: TranslateService
+  translateWin: TranslatePopupController
 }
 
 /** 注册全部 IPC；主→渲染事件经 hooks 由 viewManager 回调驱动 */
 export function registerIpc(deps: IpcDeps): void {
-  const { providers, prompts, state, views, floatViews, floatWin } = deps
+  const { providers, prompts, state, views, floatViews, floatWin, translate, translateWin } = deps
 
   /** 视图懒注册:站点尚未注册进管理器时按 id 补注册 */
   const ensureProviders = async (manager: ViewManager, ids: string[]): Promise<void> => {
@@ -108,4 +112,16 @@ export function registerIpc(deps: IpcDeps): void {
     clipboard.writeText(String(text ?? ''))
     return true
   })
+
+  // ---- 划词翻译 ----
+
+  ipcMain.handle(IPC.TranslateGetConfig, () => translate.getConfig())
+  ipcMain.handle(IPC.TranslateSaveConfig, (_e, input: { appId?: string; appKey?: string }) =>
+    translate.saveConfig(input ?? {})
+  )
+  ipcMain.on(IPC.TranslateSetPair, (_e, pair: unknown) => {
+    void translate.setPair(pair)
+  })
+  ipcMain.handle(IPC.TranslateGetLast, () => translateWin.getLastState())
+  ipcMain.on(IPC.TranslateHide, () => translateWin.hide())
 }

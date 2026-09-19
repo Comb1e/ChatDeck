@@ -13,6 +13,22 @@ onMounted(() => {
   if (providers.items.length === 0) void providers.load()
 })
 
+// ---------- 划词翻译配置(百度翻译 APPID/KEY,存 translate.user.json) ----------
+const trForm = reactive({ appId: '', appKey: '' })
+
+onMounted(async () => {
+  const cfg = await window.api.translate.getConfig()
+  trForm.appId = cfg.appId
+  trForm.appKey = cfg.appKey
+})
+
+async function saveTranslateConfig(): Promise<void> {
+  const saved = await window.api.translate.saveConfig({ appId: trForm.appId, appKey: trForm.appKey })
+  trForm.appId = saved.appId
+  trForm.appKey = saved.appKey
+  ui.showToast('翻译服务配置已保存')
+}
+
 function initial(name: string): string {
   return name.trim().charAt(0).toUpperCase() || '?'
 }
@@ -109,6 +125,28 @@ async function addProvider(): Promise<void> {
     </section>
 
     <section>
+      <h3 class="sec-title">划词翻译</h3>
+      <div class="add-form">
+        <input v-model="trForm.appId" type="text" placeholder="百度翻译 APPID" autocomplete="off" />
+        <input v-model="trForm.appKey" type="text" placeholder="百度翻译密钥 KEY" autocomplete="off" />
+        <div class="row">
+          <span class="grow" />
+          <button
+            class="primary"
+            :disabled="!trForm.appId.trim() || !trForm.appKey.trim()"
+            @click="saveTranslateConfig()"
+          >
+            保存
+          </button>
+        </div>
+        <p class="tr-hint">
+          配置后在任意应用划选文字按 Ctrl+Q，译文显示在悬浮窗正上方（默认中⇄英自动，方向可在弹窗切换）。
+          凭据在 fanyi-api.baidu.com 注册获取，免费标准版 QPS=1；仅保存在本机。
+        </p>
+      </div>
+    </section>
+
+    <section>
       <h3 class="sec-title">提示词库</h3>
       <div class="row">
         <button class="ghost" @click="resetPrompts()">恢复默认提示词</button>
@@ -120,9 +158,9 @@ async function addProvider(): Promise<void> {
     <section>
       <h3 class="sec-title">关于</h3>
       <p class="about">
-        ChatDeck v0.1.0 · 国内大模型聚合工作台<br />
+        ChatDeck v0.3.0 · 国内大模型聚合工作台<br />
         每个站点使用独立存储，登录数据仅保存在本机。<br />
-        快捷键：Ctrl + 1~9 切换站点。
+        快捷键：Ctrl + 1~9 切换站点，Ctrl + Q 划词翻译。
       </p>
     </section>
   </div>
@@ -295,6 +333,12 @@ async function addProvider(): Promise<void> {
 
 .add-form input[type='text']:focus {
   border-color: var(--accent);
+}
+
+.tr-hint {
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--text-faint);
 }
 
 .row {

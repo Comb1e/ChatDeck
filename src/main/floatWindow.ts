@@ -16,6 +16,10 @@ const EMPTY: PersistedFloatState = { x: null, y: null, expanded: true, activePro
 export interface FloatWindowDeps {
   /** 窗口惰性创建完成时回调(用于把视图管理器 attach 到该窗口) */
   onWindowCreated?: (win: BrowserWindow) => void
+  /** 位置/尺寸变化(拖动防抖后或展开⇄折叠)回调 — 译文弹窗跟随用 */
+  onMoved?: () => void
+  /** 悬浮窗隐藏回调 — 译文弹窗随之隐藏 */
+  onHide?: () => void
 }
 
 /**
@@ -75,6 +79,7 @@ export class FloatWindowController {
 
   hide(): void {
     this.getWindow()?.hide()
+    this.deps.onHide?.()
   }
 
   /** 展开 ⇄ 折叠:窗口尺寸切换,保持左上角并夹在屏幕工作区内 */
@@ -93,6 +98,7 @@ export class FloatWindowController {
     win.setBounds({ x: point.x, y: point.y, width: size.width, height: size.height })
     this.savedX = point.x
     this.savedY = point.y
+    this.deps.onMoved?.()
     await this.persist()
   }
 
@@ -188,6 +194,7 @@ export class FloatWindowController {
       const b = win.getBounds()
       this.savedX = b.x
       this.savedY = b.y
+      this.deps.onMoved?.()
       void this.persist()
     }, 400)
   }

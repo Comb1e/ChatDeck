@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '@shared/ipc'
 import type { DeckApi } from '@shared/api'
 import type { PaneLayoutEntry, PromptInput, ProviderInput, UiState } from '@shared/types'
+import type { TranslateConfig, TranslatePairId, TranslatePopupState } from '@shared/translate'
 
 /**
  * 渲染层唯一可用的宿主 API。所有方法返回 Promise（send 型也包装为 Promise 以便统一风格）。
@@ -50,6 +51,14 @@ const api: DeckApi = {
   clipboard: {
     writeText: (text: string) => ipcRenderer.invoke(IPC.ClipboardWrite, text)
   },
+  translate: {
+    getConfig: () => ipcRenderer.invoke(IPC.TranslateGetConfig) as Promise<TranslateConfig>,
+    saveConfig: (input: { appId: string; appKey: string }) =>
+      ipcRenderer.invoke(IPC.TranslateSaveConfig, input) as Promise<TranslateConfig>,
+    setPair: (pair: TranslatePairId): void => ipcRenderer.send(IPC.TranslateSetPair, pair),
+    getLast: () => ipcRenderer.invoke(IPC.TranslateGetLast) as Promise<TranslatePopupState | null>,
+    hide: () => ipcRenderer.invoke(IPC.TranslateHide) as Promise<boolean>
+  },
   on: {
     titleChanged: (cb): void => {
       ipcRenderer.on(IPC.EvTitleChanged, (_e, payload) => cb(payload))
@@ -59,6 +68,9 @@ const api: DeckApi = {
     },
     loadStateChanged: (cb): void => {
       ipcRenderer.on(IPC.EvLoadStateChanged, (_e, payload) => cb(payload))
+    },
+    translateResult: (cb: (state: TranslatePopupState) => void): void => {
+      ipcRenderer.on(IPC.EvTranslateResult, (_e, payload) => cb(payload))
     }
   },
   onF: {

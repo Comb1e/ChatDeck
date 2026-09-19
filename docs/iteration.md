@@ -1,5 +1,31 @@
 # 迭代记录
 
+## v0.3.3（2026-09-19）
+
+打包产物删除 SwiftShader/Vulkan 软件渲染兜底文件，exe 再减 ~1.5MB（v0.3.2 遗留项落地）。
+
+### 上版问题
+
+- v0.3.2 分析结论待定夺：删 `vk_swiftshader.dll` / `vk_swiftshader_icd.json` / `vulkan-1.dll` 对有 GPU 的机器零性能影响，可再省体积；用户确认删除。
+
+### 方法（根因）
+
+- `build/afterPack.js` 新增 `DROP_RUNTIME` 清单（`vk_swiftshader.dll`、`vk_swiftshader_icd.json`、`vulkan-1.dll`），打包后、压缩归档前删除，便携包/安装包同步受益（解压共释放 6.1MB，压缩后每包约 -1.5MB）。
+- `d3dcompiler_47.dll` 明确保留：正常 GPU 渲染路径（ANGLE → D3D11）运行时编译着色器必需，删除会让所有机器渲染异常。
+- 版本 bump 至 0.3.3：v0.3.2 的 exe 已交付，避免同名不同内容的两份产物。
+
+### 验证结果
+
+- win-unpacked 抽查：三个文件已消失，`d3dcompiler_47.dll`/`libEGL.dll`/`libGLESv2.dll`（ANGLE）完整，locales 仍为 2 个 .pak。
+- 打包冒烟：`dist/win-unpacked/ChatDeck.exe` 启动 → 主窗与 Kimi webview 完整渲染（GPU/ANGLE 路径无恙）；侧栏"悬浮窗"按钮触发 → 折叠胶囊（148×64）在保存位置正常显示（透明窗口合成正常）。
+- 体积实测：Portable 69.6 → 68.1MB，Setup 69.8 → 68.3MB（v0.3.0 起累计 78.2 → 68.1，−13%）。
+- 回归：typecheck 通过；95/95 单测通过。
+
+### 遗留问题
+
+- 已放弃的兜底：GPU 进程崩溃后无法软件渲染续命（渲染异常需重启应用）、无 Vulkan 驱动的机器上 WebGPU 不可用、RDP/无 GPU 虚拟机可能白屏。若用户在虚拟机/RDP 场景遇到白屏，从 afterPack 的 `DROP_RUNTIME` 移除对应条目重打包即可回滚。
+- v0.3.2 遗留照旧：dev 任务栏 electron.exe 默认图标、watcher 补丁锚点随大版本升级需人工重对；v0.3.1 遗留照旧：~68MB Electron 地板、垂直双屏向下跨屏被钳、顶部任务栏 8px 条带、v0.3.0/v0.1.x 各项。
+
 ## v0.3.2（2026-09-19）
 
 应用图标重设计（黑底亮蓝原子轨道）+ 根治 dev watcher 写空 out/main 的问题。

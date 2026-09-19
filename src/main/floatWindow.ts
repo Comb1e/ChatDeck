@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, screen } from 'electron'
-import { clampPoint, FLOAT_EXPANDED, FLOAT_PILL } from '@shared/floatLayout'
+import { clampDragBounds, clampPoint, FLOAT_EXPANDED, FLOAT_PILL } from '@shared/floatLayout'
 import type { FloatWindowState } from '@shared/api'
 import { JsonStore } from './store/jsonStore'
 
@@ -143,6 +143,16 @@ export class FloatWindowController {
     })
     // 'floating' 级别:压过普通应用窗口,但不盖系统托盘/输入法
     win.setAlwaysOnTop(true, 'floating')
+    // 拖动硬钳制:手动拖动落地前拦截(will-move),拖不进任务栏/屏幕外;
+    // setBounds 触发的程序性移动不会走此事件,无递归
+    win.on('will-move', (event, newBounds) => {
+      const area = screen.getDisplayMatching(newBounds).workArea
+      const point = clampDragBounds(newBounds, area)
+      if (point.x !== newBounds.x || point.y !== newBounds.y) {
+        event.preventDefault()
+        win.setBounds({ x: point.x, y: point.y, width: newBounds.width, height: newBounds.height })
+      }
+    })
     // ready-to-show 后再显示,避免透明窗口在 Windows 上闪黑底
     win.on('ready-to-show', () => win.show())
     win.on('move', () => this.schedulePositionSave())
@@ -191,9 +201,15 @@ export class FloatWindowController {
       this.moveTimer = null
       const win = this.getWindow()
       if (!win) return
+      // 拖动结束落盘前兜底钳制(will-move 已挡住手动拖动,此处只兜程序性/系统级偏移)
       const b = win.getBounds()
-      this.savedX = b.x
-      this.savedY = b.y
+      const area = screen.getDisplayMatching(b).workArea
+      const point = clampPoint(b.x, b.y, b.width, b.height, area)
+      if (point.x !== b.x || point.y !== b.y) {
+        win.setBounds({ x: point.x, y: point.y, width: b.width, height: b.height })
+      }
+      this.savedX = point.x
+      this.savedY = point.y
       this.deps.onMoved?.()
       void this.persist()
     }, 400)

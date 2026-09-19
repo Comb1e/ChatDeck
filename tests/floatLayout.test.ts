@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  clampDragBounds,
   clampPoint,
+  DRAG_KEEP_VISIBLE,
   FLOAT_EXPANDED,
   FLOAT_FRAME_PAD,
   FLOAT_HEADER_H,
@@ -86,5 +88,55 @@ describe('clampPoint:窗口完全落在工作区内', () => {
 
   it('双向都放不下时夹到工作区原点', () => {
     expect(clampPoint(500, 500, w * 6, h * 6, WORK)).toEqual({ x: 0, y: 0 })
+  })
+})
+
+describe('clampDragBounds:拖动硬钳制(底边挡任务栏,其余保留可见条带)', () => {
+  const W = FLOAT_PILL.width
+  const H = FLOAT_PILL.height
+
+  it('界内位置不变', () => {
+    expect(clampDragBounds({ x: 500, y: 500, width: W, height: H }, WORK)).toEqual({ x: 500, y: 500 })
+  })
+
+  it('向下拖不进任务栏:窗口底边被钳在工作区底边', () => {
+    const p = clampDragBounds({ x: 1000, y: 2000, width: W, height: H }, WORK)
+    expect(p.y).toBe(WORK.height - H)
+    expect(p.x).toBe(1000)
+  })
+
+  it('向上拖保留底部可见条带:窗口可部分越过工作区顶边', () => {
+    const p = clampDragBounds({ x: 1000, y: -500, width: W, height: H }, WORK)
+    expect(p.y).toBe(WORK.y + DRAG_KEEP_VISIBLE - H)
+    // 底边留 8px 在工作区内,窗口仍可抓取
+    expect(p.y + H).toBe(WORK.y + DRAG_KEEP_VISIBLE)
+  })
+
+  it('向左拖保留右侧可见条带:窗口可部分越出左边界(跨屏拖动不被堵死)', () => {
+    const p = clampDragBounds({ x: -2000, y: 500, width: W, height: H }, WORK)
+    expect(p.x).toBe(WORK.x + DRAG_KEEP_VISIBLE - W)
+    expect(p.y).toBe(500)
+  })
+
+  it('负坐标工作区(左侧副屏)同样正确', () => {
+    const p = clampDragBounds({ x: -4000, y: 5000, width: W, height: H }, WORK_OFFSET)
+    expect(p.x).toBe(WORK_OFFSET.x + DRAG_KEEP_VISIBLE - W)
+    expect(p.y).toBe(WORK_OFFSET.y + WORK_OFFSET.height - H)
+  })
+
+  it('展开态大窗口越界四边均受钳', () => {
+    const ew = FLOAT_EXPANDED.width
+    const eh = FLOAT_EXPANDED.height
+    const p = clampDragBounds({ x: -9999, y: 9999, width: ew, height: eh }, WORK)
+    expect(p.x).toBe(WORK.x + DRAG_KEEP_VISIBLE - ew)
+    expect(p.y).toBe(WORK.y + WORK.height - eh)
+  })
+
+  it('窗口比工作区还大:区间退化时不反向,钳到边界', () => {
+    const p = clampDragBounds({ x: 500, y: 500, width: W * 30, height: H * 30 }, WORK)
+    expect(Number.isFinite(p.x)).toBe(true)
+    expect(Number.isFinite(p.y)).toBe(true)
+    expect(p.x).toBeLessThanOrEqual(WORK.width - DRAG_KEEP_VISIBLE)
+    expect(p.y).toBeLessThanOrEqual(WORK.height - H * 30)
   })
 })

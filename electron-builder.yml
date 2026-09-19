@@ -11,6 +11,12 @@ directories:
 files:
   - out/**
 
+# 最高 LZMA 压缩(portable 7z 与 NSIS 共用),构建稍慢但产物更小
+compression: maximum
+
+# 打包后裁剪 Chromium 语言包(压缩归档前生效,portable/NSIS 同步受益)
+afterPack: build/afterPack.js
+
 # 内置默认配置与错误页平铺拷到安装目录 resources/ 根层,
 # 与 src/main/store/jsonStore.ts resourceFile() 的 process.resourcesPath 读取路径对应
 # (注意 to 必须是 "."——写成 "resources" 会多套一层目录导致读不到)

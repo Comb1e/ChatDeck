@@ -46,6 +46,7 @@ app（单实例 + 托盘常驻）
 - **窄屏适配**：悬浮窗视图用 `webContents.setUserAgent()`（视图级）盖移动端 UA，**不能**用 `session.setUserAgent`（会污染桌面版同分区视图）。厂商自带 `userAgent` 配置优先。
 - **隐藏不刷新**：折叠成药丸或切到提示词模式时，站点视图用**零矩形** `{0,0,0,0}` 保持挂载（`setLayout([])` 会 detach→重挂→整页刷新）；悬浮窗关闭主窗时主窗隐藏到托盘，托盘「退出」才真正退出。
 - **独立持久化**：悬浮窗位置/展开态/活动站点存 `float-state.json`，与 `ui-state.json` 分文件，避免渲染层整包写 ui-state 时互相覆盖。
+- **拖动硬钳制**：`will-move`（手动拖动落地前触发，程序性 setBounds 不触发）逐帧钳制位置（`shared/floatLayout.ts` 的 `clampDragBounds` 纯函数）——底边完全不允许越过工作区底（拖不进任务栏），左右上允许部分越界但保留 8px 可见条带（兼顾跨显示器拖动）；拖动结束落盘前再用 `clampPoint` 兜底钳制并持久化，启动还原位置同样过 `clampPoint`（历史坏位置自动治愈）。
 - 透明窗口注意：`backgroundColor` 必须 `#00000000`；`ready-to-show` 后再 show（防 Windows 黑底）；折叠高度 64 是 Windows 非可调窗口的系统最小高度，设 48 会被静默抬升。
 
 ## 划词翻译（Ctrl+Q · 百度翻译 API）
@@ -170,6 +171,11 @@ app.asar（out/** 打包）        安装目录/resources/（extraResources 平�
 - 关键约束：extraResources 的 `to` 必须是 `.`（写成 `resources` 会多套一层，运行时读不到）。
 - userData 不变（`%APPDATA%/chatdeck`），打包版与开发版登录态互通。
 - 单实例锁在打包版同样生效：重复启动只聚焦已有窗口。
+
+体积控制（v0.3.1 起，三件套缺一不可）：
+- `package.json` 的 `dependencies` 必须保持为空——vue/pinia 只被渲染层用且已由 vite 打进 bundle，若挪回 dependencies 会被 electron-builder 整树拷进 asar（曾把 asar 撑到 14.9MB，其中 @babel/parser、@vue/compiler-sfc 等编译器链全是死重）。主进程将来要引运行时依赖时才移回，并确认确有运行时 require。
+- `compression: maximum`（7z/NSIS 最高 LZMA）。
+- `afterPack: build/afterPack.js`：压缩归档前裁掉 locales/ 下除 en-US、zh-CN 外的全部 .pak（Chromium 内置 UI 字符串，缺失语言回退英文，页面渲染无关）。
 
 ## 持久化位置（%APPDATA%/chatdeck/）
 

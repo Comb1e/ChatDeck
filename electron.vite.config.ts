@@ -11,6 +11,10 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     resolve: {
       alias: sharedAlias
+    },
+    build: {
+      // 防抖合并快速连续编辑:避免背靠背重建竞态把 out/main 写空(electron-vite watcher 偶发问题)
+      watch: { buildDelay: 400 }
     }
   },
   preload: {
@@ -19,6 +23,7 @@ export default defineConfig({
       alias: sharedAlias
     },
     build: {
+      watch: { buildDelay: 400 },
       rollupOptions: {
         input: {
           index: resolve('src/preload/index.ts'),

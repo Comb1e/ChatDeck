@@ -47,6 +47,7 @@ app（单实例 + 托盘常驻）
 - **隐藏不刷新**：折叠成药丸或切到提示词模式时，站点视图用**零矩形** `{0,0,0,0}` 保持挂载（`setLayout([])` 会 detach→重挂→整页刷新）；悬浮窗关闭主窗时主窗隐藏到托盘，托盘「退出」才真正退出。
 - **独立持久化**：悬浮窗位置/展开态/活动站点存 `float-state.json`，与 `ui-state.json` 分文件，避免渲染层整包写 ui-state 时互相覆盖。
 - **拖动硬钳制**：`will-move`（手动拖动落地前触发，程序性 setBounds 不触发）逐帧钳制位置（`shared/floatLayout.ts` 的 `clampDragBounds` 纯函数）——底边完全不允许越过工作区底（拖不进任务栏），左右上允许部分越界但保留 8px 可见条带（兼顾跨显示器拖动）；拖动结束落盘前再用 `clampPoint` 兜底钳制并持久化，启动还原位置同样过 `clampPoint`（历史坏位置自动治愈）。
+- **dev watcher 防抖 + 守卫**：main/preload 的 `build.watch.buildDelay: 400` 合并快速连续编辑（rollup watch 对失败/空重建会删除上一轮产物，与重启竞态曾导致 out/main 写空、dev 死亡）；`scripts/patch-electron-vite.mjs`（postinstall 重放）给 electron-vite 重启逻辑加"入口产物缺失则跳过本次重启"的守卫。
 - 透明窗口注意：`backgroundColor` 必须 `#00000000`；`ready-to-show` 后再 show（防 Windows 黑底）；折叠高度 64 是 Windows 非可调窗口的系统最小高度，设 48 会被静默抬升。
 
 ## 划词翻译（Ctrl+Q · 百度翻译 API）
@@ -143,7 +144,7 @@ single ⇄ split2 ⇄ split3
 
 ```
 resources/            内置默认配置 + 错误页 + 托盘图标（打包时需 extraResources）
-scripts/              开发期工具（make-icon.mjs 生成应用图标与托盘图标）
+scripts/              开发期工具（make-icon.mjs 生成应用/托盘图标；patch-electron-vite.mjs 给 dev watcher 空重建打守卫补丁，postinstall 自动执行）
 build/                打包资源（icon.ico，electron-builder 默认 buildResources 目录）
 src/shared/           前后端共享：类型、IPC 常量、纯函数（merge/layout/viewState/prompts/floatLayout/translate）、API 接口
 src/main/             主进程：窗口、floatWindow、translateWindow、translateService、textCapture、tray、ViewManager、IPC、三个 store

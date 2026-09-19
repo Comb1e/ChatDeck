@@ -1,5 +1,43 @@
 # 迭代记录
 
+## v0.3.2（2026-09-19）
+
+应用图标重设计（黑底亮蓝原子轨道）+ 根治 dev watcher 写空 out/main 的问题。
+
+### 上版问题
+
+- 用户报告：悬浮窗收缩态可拖进任务栏底下且无法取回（v0.3.1 已修）。
+- 用户报告：electron-vite dev watcher 偶发把 out/main 写空、报 "No electron app entry file found"，重启 dev 才恢复（本版开发期间遇到两次）。
+- 用户要求：图标由橙白配色换成黑+蓝，最终明确为"参考 Electron 默认运行时标识（dev 任务栏/标题栏显示的那个）做新颖时尚的再设计"。
+
+### 方法（根因）
+
+- **图标**：`scripts/make-icon.mjs` 重写——深空径向渐变圆底 + 单条主轨道（被两个断口分为两段弧）+ 断口处两颗带柔光的电子（右上/左下对角）+ 中心亮核；轨道线色沿世界纵向做青蓝→蓝→蓝紫渐变；辉光一律平方衰减，不做硬边色块。负空间充足，小尺寸（托盘 16px）仍可读。
+- **watcher 根因**（本版实测复现确认）：rollup watch 对失败/空重建会把上一轮产物**删除**（out/main/index.js 消失，语法错误注入实验复现）；electron-vite 的 watchHook 在重建结束后**无条件** kill+重启 electron，`startElectron` 内 `ensureElectronEntryFile` 在入口缺失时直接 throw → dev 会话死亡。
+- **watcher 修复（两层）**：
+  1. `electron.vite.config.ts` 给 main/preload 加 `build.watch.buildDelay: 400`——快速连续编辑合并为一次重建，消灭"背靠背重建竞态"这一触发条件；
+  2. 新增 `scripts/patch-electron-vite.mjs`（package.json postinstall 自动执行、幂等）给 electron-vite 两份 chunk（ESM/CJS）打补丁：watchHook 重启 electron 前检查入口产物，缺失则跳过本次重启并告警（当前 electron 继续用旧代码跑，下一次有效重建正常重启）——空重建即便发生也只是"慢半拍"而非死亡。
+
+### 踩坑
+
+- **图标绘制单位混用**：电子/核的半径常量是相对值（0.038），绘制时直接与像素距离比较 → 两个"点"分支从未命中，前几版图标只有轨道没有点。排查手段：按公式计算电子应在的像素坐标、反读 PNG 采样值对照。教训：几何渲染里"相对单位/像素单位"必须显式换算。
+- patch 锚点里的 `\n` 是 chunk 源码中的字面反斜杠+n（日志字符串），模板字面量会把它变成真换行导致锚点失配，需 `\\n`；补丁脚本对锚点失配做警告软失败，不阻塞 npm install。
+- 主构建产物经 esbuild 压缩，源码注释不会进入 out/main/index.js——锤击测试用注释留痕验证产物时，grep 恒为 0 属预期。
+
+### 验证结果
+
+- 图标：`build/icon.ico`（7 尺寸）+ `icon-256.png` 预览人工确认（轨道断口、双电子、亮核、渐变、辉光均正确渲染）；`resources/tray.png`、`tray@2x.png` 同步再生。
+- watcher 锤击：10 次快速交错编辑（main+shared 混合）→ 恰好合并为 1 次重建（buildDelay 生效），产物 48.10 kB 正常、electron 正常重启；3 轮分离突发（间隔 0.8s）→ 3 次串行重建全部健康，账目吻合（6 次构建/5 次重启/0 入口错误）；注入语法错误 → 构建失败不触发重启、electron 存活（old 代码继续跑），恢复后正常重启。
+- 回归：typecheck 通过；95/95 单测通过。
+- 打包：`npm run dist` 产出 v0.3.2 双 exe，体积与 v0.3.1 持平（~69.6MB），新图标嵌入 exe 与托盘。
+
+### 遗留问题
+
+- dev 模式下任务栏/标题栏显示 electron.exe 默认图标（无窗口级 icon），与本版新图标视觉同源但非同一文件；打包版显示新图标。需要时可给 BrowserWindow 显式配 icon。
+- watcher 补丁随 node_modules 重装由 postinstall 重放；electron-vite 大版本升级导致锚点失配时补丁自动跳过（仅警告），需人工重对锚点。
+- 删 vk_swiftshader/vulkan-1 再省 ~3MB 的方案已分析（对有 GPU 机器零性能影响），待用户定夺。
+- v0.3.1 遗留照旧：~69MB Electron 地板、垂直双屏向下跨屏被钳、顶部任务栏 8px 条带、v0.3.0/v0.1.x 各项。
+
 ## v0.3.1（2026-09-19）
 
 产物轻量化（exe −11%）+ 修复悬浮窗收缩态可拖进任务栏且无法取回的 bug。

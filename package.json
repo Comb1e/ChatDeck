@@ -1,6 +1,6 @@
 {
   "name": "chatdeck",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "ChatDeck — 国内大模型聚合工作台",
   "main": "./out/main/index.js",
   "author": "CYK",
@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "icon": "node scripts/make-icon.mjs",
+    "postinstall": "node scripts/patch-electron-vite.mjs",
     "dist": "npm run build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --win",
     "dist:dir": "npm run build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --dir"
   },

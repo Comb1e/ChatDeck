@@ -22,12 +22,14 @@ function onKeydown(e: KeyboardEvent): void {
 }
 
 onMounted(async () => {
-  window.api.on.titleChanged((e) => providers.onTitleChanged(e.id, e.title))
+  window.api.on.titleChanged((e) => providers.onTitleChanged(e.id, e.title, layout.activeId === e.id))
   window.api.on.activeChanged((e) => layout.onMainActiveChanged(e.id))
   window.api.on.loadStateChanged((e) => providers.onLoadStateChanged(e.id, e.state as ViewLoadState))
   window.addEventListener('keydown', onKeydown)
   await providers.load()
   await layout.restore()
+  // 设置里被禁用的站点请出窗格(原在 providers.load 内,为悬浮窗复用解耦至此)
+  layout.prunePanes()
 })
 
 onBeforeUnmount(() => {

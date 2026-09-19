@@ -14,6 +14,10 @@ function initial(name: string): string {
 function isActive(id: string): boolean {
   return layout.panes.includes(id) && (layout.mode === 'single' ? layout.activeId === id : true)
 }
+
+function toggleFloat(): void {
+  void window.api.float.toggle()
+}
 </script>
 
 <template>
@@ -43,6 +47,13 @@ function isActive(id: string): boolean {
           <path d="M13.5 3.2c-1.6-.9-3.4-.9-5.5.4v9c2.1-1.3 3.9-1.3 5.5-.4V3.2Z" />
         </svg>
         提示词库
+      </button>
+      <button class="foot-btn" @click="toggleFloat">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4">
+          <rect x="1.8" y="2.8" width="12.4" height="10.4" rx="1.6" />
+          <rect x="8.4" y="7.6" width="5" height="4" rx="1" fill="currentColor" stroke="none" />
+        </svg>
+        悬浮窗
       </button>
       <button class="foot-btn" :class="{ on: ui.view === 'settings' }" @click="ui.openSettings()">
         <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4">

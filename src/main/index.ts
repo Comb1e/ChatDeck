@@ -4,7 +4,9 @@ import { IPC } from '@shared/ipc'
 import { ProviderStore } from './store/providerStore'
 import { PromptStore } from './store/promptStore'
 import { StateStore } from './store/stateStore'
-import { ViewManager } from './viewManager'
+import { MOBILE_UA, ViewManager } from './viewManager'
+import { FloatWindowController } from './floatWindow'
+import { TrayController } from './tray'
 import { registerIpc } from './ipc'
 
 const stores = {
@@ -12,8 +14,16 @@ const stores = {
   prompts: new PromptStore(),
   state: new StateStore()
 }
+// 桌面版与悬浮窗各持一个视图管理器;同名 persist 分区即共享登录态
 const viewManager = new ViewManager()
+const floatViews = new ViewManager(MOBILE_UA)
+const floatWin = new FloatWindowController({
+  // 悬浮窗惰性创建,创建完成后把视图管理器绑定到该窗口
+  onWindowCreated: (w) => floatViews.attachWindow(w)
+})
 let mainWindow: BrowserWindow | null = null
+let tray: TrayController | null = null
+let isQuitting = false
 
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
@@ -22,6 +32,7 @@ if (!gotLock) {
   app.on('second-instance', () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
       mainWindow.focus()
     }
   })
@@ -31,7 +42,7 @@ if (!gotLock) {
 
 async function bootstrap(): Promise<void> {
   Menu.setApplicationMenu(null)
-  await Promise.all([stores.providers.init(), stores.prompts.init()])
+  await Promise.all([stores.providers.init(), stores.prompts.init(), floatWin.restore()])
 
   const win = new BrowserWindow({
     width: 1440,
@@ -53,11 +64,18 @@ async function bootstrap(): Promise<void> {
   viewManager.attachWindow(win)
 
   win.on('ready-to-show', () => win.show())
+  // 悬浮窗存活时关主窗 = 隐藏到托盘;真正退出走托盘「退出」
+  win.on('close', (e) => {
+    if (!isQuitting && floatWin.getWindow()) {
+      e.preventDefault()
+      win.hide()
+    }
+  })
   win.on('closed', () => {
     mainWindow = null
   })
 
-  // 主进程 → 渲染层事件桥
+  // 主进程 → 主窗口渲染层事件桥
   const emit = (channel: string, payload: unknown): void => {
     if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send(channel, payload)
   }
@@ -67,7 +85,35 @@ async function bootstrap(): Promise<void> {
     onLoadStateChanged: (id, state) => emit(IPC.EvLoadStateChanged, { id, state })
   })
 
-  registerIpc({ providers: stores.providers, prompts: stores.prompts, state: stores.state, views: viewManager })
+  // 主进程 → 悬浮窗渲染层事件桥
+  const emitF = (channel: string, payload: unknown): void => {
+    const w = floatWin.getWindow()
+    if (w && !w.isDestroyed()) w.webContents.send(channel, payload)
+  }
+  floatViews.hook({
+    onTitleChanged: (id, title) => emitF(IPC.EvFTitleChanged, { id, title }),
+    onActiveChanged: (id) => emitF(IPC.EvFActiveChanged, { id }),
+    onLoadStateChanged: (id, state) => emitF(IPC.EvFLoadStateChanged, { id, state })
+  })
+
+  tray = new TrayController({
+    showMainWindow: () => {
+      if (!mainWindow || mainWindow.isDestroyed()) return
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    },
+    toggleFloat: () => {
+      floatWin.toggle()
+    },
+    quit: () => {
+      isQuitting = true
+      app.quit()
+    }
+  })
+  tray.create()
+
+  registerIpc({ ...stores, views: viewManager, floatViews, floatWin })
 
   if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
     await win.loadURL(process.env['ELECTRON_RENDERER_URL'])
@@ -81,5 +127,8 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  isQuitting = true
   viewManager.destroyAll()
+  floatViews.destroyAll()
+  tray?.destroy()
 })

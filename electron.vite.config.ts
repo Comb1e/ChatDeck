@@ -42,6 +42,15 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src'),
         ...sharedAlias
       }
+    },
+    build: {
+      rollupOptions: {
+        // 双 HTML 入口:index.html=桌面版,float.html=悬浮窗
+        input: {
+          index: resolve('src/renderer/index.html'),
+          float: resolve('src/renderer/float.html')
+        }
+      }
     }
   }
 })

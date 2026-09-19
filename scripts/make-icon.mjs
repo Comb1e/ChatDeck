@@ -76,4 +76,10 @@ const ico = await pngToIco(pngBuffers)
 mkdirSync(join(root, 'build'), { recursive: true })
 writeFileSync(join(root, 'build', 'icon.ico'), ico)
 writeFileSync(join(root, 'build', 'icon-256.png'), pngBuffers[pngBuffers.length - 1])
-console.log(`build/icon.ico 已生成(${sizes.length} 个尺寸,${ico.length} 字节)`)
+// 托盘图标:运行时经 resourceFile() 读取(打包由 extraResources to:"." 平铺到安装目录)
+mkdirSync(join(root, 'resources'), { recursive: true })
+writeFileSync(join(root, 'resources', 'tray.png'), draw(16))
+writeFileSync(join(root, 'resources', 'tray@2x.png'), draw(32))
+console.log(
+  `build/icon.ico 已生成(${sizes.length} 个尺寸,${ico.length} 字节);resources/tray.png、tray@2x.png 已生成`
+)

@@ -3,6 +3,7 @@
 国内大模型聚合工作台：一个桌面应用，把国内主流 LLM 网页版（DeepSeek、Kimi、豆包、通义千问、智谱清言、腾讯元宝、文心一言、讯飞星火、海螺AI、秘塔AI搜索）装进同一个窗口。
 
 - **简洁**：Claude 风格界面，米白底色、赤陶色点缀，左侧站点列表，右侧即所即所得的网页。
+- **悬浮窗**：暗色玻璃科幻风置顶小窗，展开 = 内嵌站点对话（移动版布局）+ 厂商切换，底部提示词速查（搜索/填空/一键复制）；可折叠成小药丸、可拖动，位置记忆。登录态与桌面版互通。
 - **登录态隔离**：每个站点独立持久存储，互不干扰，重启后无需重新登录。
 - **分屏对比**：支持双屏/三屏并排，同题对比各家回答；分割条可拖动。
 - **提示词库**：内置 26 条预设（翻译、代码审查、周报、深度分析……），支持占位符填空、一键复制/粘贴到当前站点，可自由增删改。
@@ -12,17 +13,19 @@
 
 **直接使用**：双击 `dist/ChatDeck-<版本>-Portable.exe`（免安装单文件），或运行 `dist/ChatDeck-Setup-<版本>.exe` 一键安装（自动创建桌面快捷方式）。exe 未做代码签名，首次运行若遇 SmartScreen 提示，点「更多信息 → 仍要运行」。
 
+**悬浮窗**：主窗口左侧栏底部「悬浮窗」按钮或托盘菜单「显示 / 隐藏悬浮窗」唤起；头部可拖动，「—」收起成小药丸，药丸上「⤢」展开；关闭主窗口时应用隐藏到托盘，托盘「退出 ChatDeck」才真正退出。
+
 ## 开发
 
 ```bash
 npm install
 npm run dev        # 开发运行
-npm test           # 单元测试（49 个）
+npm test           # 单元测试（61 个）
 npm run typecheck  # 类型检查
 npm run build      # 构建产物（out/）
 npm start          # 运行构建产物
 npm run dist       # 打包 Windows exe（portable + 安装器，输出到 dist/）
-npm run icon       # 重新生成应用图标（build/icon.ico）
+npm run icon       # 重新生成应用图标（build/icon.ico）与托盘图标（resources/tray*.png）
 ```
 
 ## 快捷键
@@ -42,6 +45,8 @@ npm run icon       # 重新生成应用图标（build/icon.ico）
 - [ai-shifu/ChatALL](https://github.com/ai-shifu/ChatALL) — 多模型并发问答桌面应用（Electron + Vue）
 - [LLM-God](https://levelup.gitconnected.com) — 内嵌多个 LLM 网页的桌面浏览器方案
 - [Electron WebContentsView / session partition 文档](https://www.electronjs.org/docs/latest/api/web-contents-view)
+- [Electron Custom Window Styles（透明/无边框窗口）](https://www.electronjs.org/docs/latest/tutorial/custom-window-styles) / [BrowserWindow backgroundMaterial](https://www.electronjs.org/docs/latest/api/browser-window)
+- [pykeio/vibe](https://github.com/pykeio/vibe) / [electron-acrylic-window](https://www.npmjs.com/package/electron-acrylic-window) — Windows acrylic 方案参考（本版未采用，与 transparent 互斥）
 
 ## License
 

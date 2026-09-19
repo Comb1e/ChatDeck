@@ -5,17 +5,30 @@ import type { ProviderStore } from './store/providerStore'
 import type { PromptStore } from './store/promptStore'
 import type { StateStore } from './store/stateStore'
 import type { ViewManager } from './viewManager'
+import type { FloatWindowController } from './floatWindow'
 
 export interface IpcDeps {
   providers: ProviderStore
   prompts: PromptStore
   state: StateStore
   views: ViewManager
+  floatViews: ViewManager
+  floatWin: FloatWindowController
 }
 
 /** 注册全部 IPC；主→渲染事件经 hooks 由 viewManager 回调驱动 */
 export function registerIpc(deps: IpcDeps): void {
-  const { providers, prompts, state, views } = deps
+  const { providers, prompts, state, views, floatViews, floatWin } = deps
+
+  /** 视图懒注册:站点尚未注册进管理器时按 id 补注册 */
+  const ensureProviders = async (manager: ViewManager, ids: string[]): Promise<void> => {
+    for (const id of ids) {
+      if (!manager.hasProvider(id)) {
+        const p = (await providers.list()).find((x) => x.id === id)
+        if (p) manager.registerProvider(p)
+      }
+    }
+  }
 
   ipcMain.handle(IPC.ProvidersList, async () => {
     const items = await providers.list()
@@ -37,6 +50,7 @@ export function registerIpc(deps: IpcDeps): void {
   ipcMain.handle(IPC.ProvidersClearData, async (_e, id: string) => {
     await providers.clearData(id)
     await views.clearData(id)
+    await floatViews.clearData(id)
     return true
   })
 
@@ -53,12 +67,7 @@ export function registerIpc(deps: IpcDeps): void {
   ipcMain.handle(IPC.StateSave, (_e, s: UiState) => state.save(s))
 
   ipcMain.handle(IPC.ViewSetLayout, async (_e, entries: PaneLayoutEntry[]) => {
-    for (const entry of entries) {
-      if (!views.hasProvider(entry.id)) {
-        const p = (await providers.list()).find((x) => x.id === entry.id)
-        if (p) views.registerProvider(p)
-      }
-    }
+    await ensureProviders(views, entries.map((x) => x.id))
     views.setLayout(entries)
     return true
   })
@@ -69,6 +78,31 @@ export function registerIpc(deps: IpcDeps): void {
   ipcMain.on(IPC.ViewForward, (_e, id: string) => views.forward(id))
   ipcMain.on(IPC.ViewOpenExternal, (_e, id: string) => views.openExternal(id))
   ipcMain.on(IPC.ViewPaste, (_e, id: string) => views.paste(id))
+
+  // ---- 悬浮窗视图通道(绑定 FloatWindow 的管理器实例) ----
+
+  ipcMain.handle(IPC.FViewSetLayout, async (_e, entries: PaneLayoutEntry[]) => {
+    await ensureProviders(floatViews, entries.map((x) => x.id))
+    floatViews.setLayout(entries)
+    return true
+  })
+  ipcMain.on(IPC.FViewSetActive, (_e, id: string) => floatViews.setActive(id))
+  ipcMain.on(IPC.FViewReload, (_e, id: string) => floatViews.reload(id))
+  ipcMain.on(IPC.FViewBack, (_e, id: string) => floatViews.back(id))
+  ipcMain.on(IPC.FViewForward, (_e, id: string) => floatViews.forward(id))
+
+  // ---- 悬浮窗窗口控制 ----
+
+  ipcMain.handle(IPC.FloatToggle, () => floatWin.toggle())
+  ipcMain.handle(IPC.FloatResize, (_e, expanded: boolean) =>
+    floatWin.setExpanded(Boolean(expanded)).then(() => true)
+  )
+  ipcMain.handle(IPC.FloatHide, () => {
+    floatWin.hide()
+    return true
+  })
+  ipcMain.handle(IPC.FloatGetState, () => floatWin.getState())
+  ipcMain.on(IPC.FloatSetProvider, (_e, id: string) => floatWin.setActiveProvider(String(id)))
 
   ipcMain.handle(IPC.ClipboardWrite, (_e, text: string) => {
     clipboard.writeText(String(text ?? ''))

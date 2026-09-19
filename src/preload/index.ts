@@ -33,6 +33,20 @@ const api: DeckApi = {
     openExternal: (id: string): void => ipcRenderer.send(IPC.ViewOpenExternal, id),
     paste: (id: string): void => ipcRenderer.send(IPC.ViewPaste, id)
   },
+  fview: {
+    setLayout: (entries: PaneLayoutEntry[]) => ipcRenderer.invoke(IPC.FViewSetLayout, entries),
+    setActive: (id: string): void => ipcRenderer.send(IPC.FViewSetActive, id),
+    reload: (id: string): void => ipcRenderer.send(IPC.FViewReload, id),
+    back: (id: string): void => ipcRenderer.send(IPC.FViewBack, id),
+    forward: (id: string): void => ipcRenderer.send(IPC.FViewForward, id)
+  },
+  float: {
+    toggle: () => ipcRenderer.invoke(IPC.FloatToggle),
+    resize: (expanded: boolean) => ipcRenderer.invoke(IPC.FloatResize, expanded),
+    hide: () => ipcRenderer.invoke(IPC.FloatHide),
+    getState: () => ipcRenderer.invoke(IPC.FloatGetState),
+    setActiveProvider: (id: string): void => ipcRenderer.send(IPC.FloatSetProvider, id)
+  },
   clipboard: {
     writeText: (text: string) => ipcRenderer.invoke(IPC.ClipboardWrite, text)
   },
@@ -45,6 +59,17 @@ const api: DeckApi = {
     },
     loadStateChanged: (cb): void => {
       ipcRenderer.on(IPC.EvLoadStateChanged, (_e, payload) => cb(payload))
+    }
+  },
+  onF: {
+    titleChanged: (cb): void => {
+      ipcRenderer.on(IPC.EvFTitleChanged, (_e, payload) => cb(payload))
+    },
+    activeChanged: (cb): void => {
+      ipcRenderer.on(IPC.EvFActiveChanged, (_e, payload) => cb(payload))
+    },
+    loadStateChanged: (cb): void => {
+      ipcRenderer.on(IPC.EvFLoadStateChanged, (_e, payload) => cb(payload))
     }
   }
 }

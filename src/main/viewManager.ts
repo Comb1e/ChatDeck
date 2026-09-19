@@ -18,10 +18,13 @@ export interface ViewManagerHooks {
 }
 
 const DEFAULT_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`
+/** 窄窗口场景(悬浮窗)的移动端 UA:站点给出适配小屏的布局 */
+export const MOBILE_UA = `Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Mobile Safari/537.36`
 
 /**
  * 站点视图管理器：每个厂商一个 WebContentsView，独立 persist partition。
  * 生命周期状态转移全部经由 @shared/viewState 的纯状态机，避免隐式状态散落。
+ * 同名 partition 即同一 session——桌面版与悬浮窗各持一个实例即可共享登录态。
  */
 export class ViewManager {
   private views = new Map<string, ManagedView>()
@@ -32,6 +35,12 @@ export class ViewManager {
     onActiveChanged: () => {},
     onLoadStateChanged: () => {}
   }
+
+  /**
+   * @param viewUserAgent 视图级 UA 覆盖(如悬浮窗的移动端 UA)。
+   *   只作用于本管理器创建的 webContents,不写 session,避免影响其他窗口的同分区视图。
+   */
+  constructor(private readonly viewUserAgent?: string) {}
 
   hook(hooks: ViewManagerHooks): void {
     this.hooks = hooks
@@ -198,6 +207,10 @@ export class ViewManager {
       }
     })
     view.setBackgroundColor('#FFFFFF')
+    // 厂商显式配置的 UA 优先;否则应用管理器级覆盖(悬浮窗移动端 UA)
+    if (this.viewUserAgent && !provider.userAgent) {
+      view.webContents.setUserAgent(this.viewUserAgent)
+    }
 
     const mv: ManagedView = { provider, view, state: 'idle', reported: 'loading' }
     this.views.set(provider.id, mv)

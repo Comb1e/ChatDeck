@@ -29,6 +29,25 @@ Electron（主进程 + WebContentsView）+ Vue 3 + TypeScript + Pinia + electron
 1. **永不被遮挡的区域**（纯 HTML）：侧边栏、工具条、窗格头、右侧抽屉。所有交互控件都在这些区域。
 2. **站点区域**：主进程把 WebContentsView 放在渲染层算出来的矩形里。加载失败时在视图内部加载本地 `resources/error.html`（重试按钮走 error preload 的 IPC），**而不是**用 HTML 盖上去（盖不住）。
 
+## 双窗口：桌面版 + 悬浮窗
+
+应用内有两个窗口、两个 ViewManager 实例，共用同一批站点会话分区：
+
+```
+app（单实例 + 托盘常驻）
+├─ MainWindow  桌面版  ── ViewManager#main  ◀─ view:* 通道（桌面 UA）
+└─ FloatWindow 悬浮窗  ── ViewManager#float ◀─ fview:* 通道（移动端 UA）
+     frame:false + transparent + alwaysOnTop('floating') + skipTaskbar
+     渲染层是独立入口 float.html；窗口由 FloatWindowController 惰性创建，
+     创建后经 onWindowCreated 回调把 floatViews attach 上去（不 attach 则 setLayout 静默跳过）
+```
+
+- **登录态互通**：两个 ViewManager 用同名分区 `persist:provider-<id>`，同名 partition 即同一 session。
+- **窄屏适配**：悬浮窗视图用 `webContents.setUserAgent()`（视图级）盖移动端 UA，**不能**用 `session.setUserAgent`（会污染桌面版同分区视图）。厂商自带 `userAgent` 配置优先。
+- **隐藏不刷新**：折叠成药丸或切到提示词模式时，站点视图用**零矩形** `{0,0,0,0}` 保持挂载（`setLayout([])` 会 detach→重挂→整页刷新）；悬浮窗关闭主窗时主窗隐藏到托盘，托盘「退出」才真正退出。
+- **独立持久化**：悬浮窗位置/展开态/活动站点存 `float-state.json`，与 `ui-state.json` 分文件，避免渲染层整包写 ui-state 时互相覆盖。
+- 透明窗口注意：`backgroundColor` 必须 `#00000000`；`ready-to-show` 后再 show（防 Windows 黑底）；折叠高度 64 是 Windows 非可调窗口的系统最小高度，设 48 会被静默抬升。
+
 ## 数据流
 
 ```
@@ -99,14 +118,15 @@ single ⇄ split2 ⇄ split3
 ## 目录说明
 
 ```
-resources/            内置默认配置 + 错误页（打包时需 extraResources）
-scripts/              开发期工具（make-icon.mjs 生成应用图标）
+resources/            内置默认配置 + 错误页 + 托盘图标（打包时需 extraResources）
+scripts/              开发期工具（make-icon.mjs 生成应用图标与托盘图标）
 build/                打包资源（icon.ico，electron-builder 默认 buildResources 目录）
-src/shared/           前后端共享：类型、IPC 常量、纯函数（merge/layout/viewState/prompts）、API 接口
-src/main/             主进程：窗口、ViewManager、IPC、三个 store（providers/prompts/state）
-src/preload/          contextBridge：index.ts（主 API）、error.ts（错误页重试）
-src/renderer/         界面：Sidebar / Workspace / Drawer（提示词库、设置）
-tests/                Vitest 单测（只测 shared 纯函数，49 个用例）
+src/shared/           前后端共享：类型、IPC 常量、纯函数（merge/layout/viewState/prompts/floatLayout）、API 接口
+src/main/             主进程：窗口、floatWindow、tray、ViewManager、IPC、三个 store（providers/prompts/state）
+src/preload/          contextBridge：index.ts（主 API，桌面版/悬浮窗共用）、error.ts（错误页重试）
+src/renderer/         界面：index.html（桌面版 Sidebar/Workspace/Drawer）+ float.html（悬浮窗）
+src/renderer/src/float/  悬浮窗渲染层：floatStore + FloatApp/FloatHeader/FloatPrompts/FloatPill
+tests/                Vitest 单测（只测 shared 纯函数，61 个用例）
 ```
 
 ## 打包与分发（electron-builder）
@@ -117,7 +137,8 @@ tests/                Vitest 单测（只测 shared 纯函数，49 个用例）
 app.asar（out/** 打包）        安装目录/resources/（extraResources 平铺）
 ├─ out/main/index.js           ├─ providers.default.json   ← resourceFile() 读这里
 ├─ out/preload/{index,error}.js ├─ prompts.default.json       (process.resourcesPath)
-└─ out/renderer/index.html     └─ error.html              ← viewManager.errorPagePath()
+└─ out/renderer/{index,float}.html └─ error.html            ← viewManager.errorPagePath()
+                                  └─ tray.png / tray@2x.png ← tray.ts 读这里
 ```
 
 - 产物：`dist/ChatDeck-<ver>-Portable.exe`（免安装双击即用）与 `dist/ChatDeck-Setup-<ver>.exe`（一键安装，per-user）。
@@ -128,5 +149,6 @@ app.asar（out/** 打包）        安装目录/resources/（extraResources 平�
 ## 持久化位置（%APPDATA%/chatdeck/）
 
 - `providers.user.json` / `prompts.user.json`：用户配置层
-- `ui-state.json`：活动站点、布局模式、窗格比例
-- `Partitions/provider-*`：各站点的登录数据（cookie/localStorage）
+- `ui-state.json`：活动站点、布局模式、窗格比例（桌面版）
+- `float-state.json`：悬浮窗位置 x/y、展开态、活动站点
+- `Partitions/provider-*`：各站点的登录数据（cookie/localStorage），桌面版与悬浮窗共享

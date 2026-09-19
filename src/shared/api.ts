@@ -35,6 +35,25 @@ export interface DeckApi {
     openExternal(id: string): void
     paste(id: string): void
   }
+  /** 悬浮窗专用视图通道(仅悬浮窗渲染层调用,绑定 FloatWindow 的视图管理器) */
+  fview: {
+    setLayout(entries: PaneLayoutEntry[]): Promise<boolean>
+    setActive(id: string): void
+    reload(id: string): void
+    back(id: string): void
+    forward(id: string): void
+  }
+  /** 悬浮窗窗口控制 */
+  float: {
+    /** 主窗口侧唤起/收起悬浮窗 */
+    toggle(): Promise<boolean>
+    /** 悬浮窗内部:展开/折叠 */
+    resize(expanded: boolean): Promise<boolean>
+    /** 悬浮窗自身隐藏 */
+    hide(): Promise<boolean>
+    getState(): Promise<FloatWindowState>
+    setActiveProvider(id: string): void
+  }
   clipboard: {
     writeText(text: string): Promise<boolean>
   }
@@ -43,6 +62,17 @@ export interface DeckApi {
     activeChanged(cb: (e: { id: string }) => void): void
     loadStateChanged(cb: (e: { id: string; state: ViewLoadState }) => void): void
   }
+  onF: {
+    titleChanged(cb: (e: { id: string; title: string }) => void): void
+    activeChanged(cb: (e: { id: string }) => void): void
+    loadStateChanged(cb: (e: { id: string; state: ViewLoadState }) => void): void
+  }
+}
+
+/** 悬浮窗持久化状态(float-state.json)暴露给渲染层的部分 */
+export interface FloatWindowState {
+  expanded: boolean
+  activeProviderId: string | null
 }
 
 export interface PromptLibrary {

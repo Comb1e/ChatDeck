@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, Menu, globalShortcut } from 'electron'
+import { app, BrowserWindow, Menu, globalShortcut, powerMonitor, screen } from 'electron'
 import { IPC } from '@shared/ipc'
 import { formatDirection, resolveDirection } from '@shared/translate'
 import type { TranslatePopupState } from '@shared/translate'
@@ -31,7 +31,9 @@ const floatWin = new FloatWindowController({
   // 悬浮窗惰性创建,创建完成后把视图管理器绑定到该窗口
   onWindowCreated: (w) => floatViews.attachWindow(w),
   onMoved: () => translateWin.repositionIfVisible(),
-  onHide: () => translateWin.hide()
+  onHide: () => translateWin.hide(),
+  // 重建窗口前把站点视图从旧窗口摘下(留在缓存),随新窗口 boot 后的 setLayout 重新挂载
+  onDetachViews: () => floatViews.setLayout([])
 })
 let mainWindow: BrowserWindow | null = null
 let tray: TrayController | null = null
@@ -127,6 +129,17 @@ async function bootstrap(): Promise<void> {
 
   registerIpc({ ...stores, views: viewManager, floatViews, floatWin, translate, translateWin })
   registerTranslateHotkey()
+
+  // 透明悬浮窗自愈:锁屏/休眠唤醒/显卡驱动重置后 DWM 合成表面可能失效(整窗透明"消失",
+  // isVisible 仍为 true 导致托盘第一击 toggle 反而执行隐藏),在这些事件后强制恢复;
+  // 显示器拓扑变化(断开/分辨率变更)则把窗口夹回现存工作区。
+  powerMonitor.on('resume', () => floatWin.heal())
+  powerMonitor.on('unlock-screen', () => floatWin.heal())
+  app.on('child-process-gone', (_e, details) => {
+    if (details.type === 'GPU') floatWin.heal()
+  })
+  screen.on('display-removed', () => floatWin.reclamp())
+  screen.on('display-metrics-changed', () => floatWin.reclamp())
 
   if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
     await win.loadURL(process.env['ELECTRON_RENDERER_URL'])

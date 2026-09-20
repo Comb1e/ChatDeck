@@ -13,6 +13,9 @@ interface PersistedFloatState {
 
 const EMPTY: PersistedFloatState = { x: null, y: null, expanded: true, activeProviderId: null }
 
+/** 渲染进程崩溃后自动重建窗口的最小间隔,防止崩溃循环拖垮整机 */
+const RECREATE_GUARD_MS = 10_000
+
 export interface FloatWindowDeps {
   /** 窗口惰性创建完成时回调(用于把视图管理器 attach 到该窗口) */
   onWindowCreated?: (win: BrowserWindow) => void
@@ -20,6 +23,8 @@ export interface FloatWindowDeps {
   onMoved?: () => void
   /** 悬浮窗隐藏回调 — 译文弹窗随之隐藏 */
   onHide?: () => void
+  /** 窗口重建前把站点视图从旧窗口摘下(留在缓存),避免随窗口一起销毁 */
+  onDetachViews?: () => void
 }
 
 /**
@@ -36,6 +41,7 @@ export class FloatWindowController {
   private savedY: number | null = null
   private moveTimer: ReturnType<typeof setTimeout> | null = null
   private writeQueue: Promise<void> = Promise.resolve()
+  private lastRecreateAt = 0
 
   constructor(private readonly deps: FloatWindowDeps = {}) {}
 
@@ -72,14 +78,54 @@ export class FloatWindowController {
   }
 
   show(): void {
-    const win = this.getWindow() ?? this.create()
-    win.show()
-    win.focus()
+    const win = this.getWindow()
+    if (win && win.webContents.isCrashed()) {
+      // 页面已崩溃(表现为白屏/透明),直接换新窗口
+      this.recreate()
+      return
+    }
+    const target = win ?? this.create()
+    // Windows 上锁屏/全屏应用/驱动重置后 'floating' 置顶级别可能丢失,显示时重新断言
+    target.setAlwaysOnTop(true, 'floating')
+    target.show()
+    target.focus()
+    // 透明窗口久跑后 DWM 合成表面可能失效(整窗透明"消失"),强制重绘一次
+    target.webContents.invalidate()
   }
 
   hide(): void {
     this.getWindow()?.hide()
     this.deps.onHide?.()
+  }
+
+  /**
+   * 透明窗口自愈:锁屏/休眠唤醒/GPU 进程崩溃后,Windows 的 DWM 合成表面可能失效,
+   * 表现为整窗透明不可见( isVisible() 仍为 true,托盘「显示/隐藏」第一击反而执行了隐藏)。
+   * hide→show 强制重建合成表面,配合重新置顶与强制重绘;窗口未显示或已崩溃交由重建处理。
+   */
+  heal(): void {
+    const win = this.getWindow()
+    if (!win || !win.isVisible()) return
+    if (win.webContents.isCrashed()) {
+      this.recreateIfDue()
+      return
+    }
+    win.setAlwaysOnTop(true, 'floating')
+    win.hide()
+    win.show()
+    win.webContents.invalidate()
+  }
+
+  /** 显示器拓扑变化后把窗口夹回现存工作区(防止窗口留在已断开的显示器上不可见) */
+  reclamp(): void {
+    const win = this.getWindow()
+    if (!win || !win.isVisible()) return
+    const b = win.getBounds()
+    const area = screen.getDisplayMatching(b).workArea
+    const point = clampPoint(b.x, b.y, b.width, b.height, area)
+    if (point.x !== b.x || point.y !== b.y) {
+      win.setBounds({ x: point.x, y: point.y, width: b.width, height: b.height })
+    }
   }
 
   /** 展开 ⇄ 折叠:窗口尺寸切换,保持左上角并夹在屏幕工作区内 */
@@ -113,6 +159,28 @@ export class FloatWindowController {
 
   // ------------------------------------------------------------------
 
+  /** 重建窗口但受崩溃循环保护(自愈事件路径用);不满足间隔要求时静默跳过 */
+  private recreateIfDue(): void {
+    const now = Date.now()
+    if (now - this.lastRecreateAt < RECREATE_GUARD_MS) return
+    this.lastRecreateAt = now
+    this.recreate()
+  }
+
+  /** 销毁当前窗口并立即重建(渲染进程崩溃/表面失效);新页面 boot 后重新发布局挂载站点视图 */
+  private recreate(): void {
+    const old = this.getWindow()
+    if (old) {
+      const b = old.getBounds()
+      this.savedX = b.x
+      this.savedY = b.y
+      this.deps.onDetachViews?.()
+      old.destroy()
+    }
+    this.win = null
+    this.show()
+  }
+
   private create(): BrowserWindow {
     const size = this.expanded ? FLOAT_EXPANDED : FLOAT_PILL
     const point = this.initialPoint(size.width, size.height)
@@ -143,6 +211,8 @@ export class FloatWindowController {
     })
     // 'floating' 级别:压过普通应用窗口,但不盖系统托盘/输入法
     win.setAlwaysOnTop(true, 'floating')
+    // 跟随虚拟桌面且不被全屏应用盖住(多桌面切换/全屏视频时胶囊不丢)
+    win.setVisibleOnAllWorkspaces(true)
     // 拖动硬钳制:手动拖动落地前拦截(will-move),拖不进任务栏/屏幕外;
     // setBounds 触发的程序性移动不会走此事件,无递归
     win.on('will-move', (event, newBounds) => {
@@ -158,6 +228,11 @@ export class FloatWindowController {
     win.on('move', () => this.schedulePositionSave())
     win.on('closed', () => {
       this.win = null
+    })
+    // 悬浮窗自身页面崩溃(白屏/透明) → 自动重建;受最小间隔保护防崩溃循环
+    win.webContents.on('render-process-gone', () => {
+      if (this.getWindow() !== win) return
+      this.recreateIfDue()
     })
     if (!app.isPackaged) {
       win.webContents.on('before-input-event', (_e, input) => {

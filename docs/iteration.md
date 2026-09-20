@@ -1,5 +1,34 @@
 # 迭代记录
 
+## v0.3.4（2026-09-19）
+
+修复：悬浮窗久跑自动消失、托盘右键唤醒失败（切到桌面再唤醒才有效）。
+
+### 上版问题
+
+- 用户报告：运行时间久了之后悬浮窗自动消失；从托盘菜单唤醒失败；切到桌面再唤醒才有效。
+
+### 方法（根因）
+
+- **根因**：悬浮窗是无边框**透明**窗口。Windows 上锁屏/休眠唤醒/显卡驱动重置后，DWM 对这类窗口的合成表面可能失效——窗口对象完好、`isVisible()` 仍为 true，但整窗透明不可见（=“消失”）。此时托盘「显示/隐藏悬浮窗」toggle 第一击反而执行了 hide；再 show 也不重绘（=“唤醒失败”）。切换桌面/Win+D 强制 DWM 重新合成，窗口“恢复”（=“切到桌面再唤醒才有效”）。伴生问题：'floating' 置顶级别也可能在同类事件后丢失，窗口被普通窗口压住。
+- **修复四层**：
+  1. `show()` 硬化：每次显示重新断言 `setAlwaysOnTop(true, 'floating')`，并 `webContents.invalidate()` 强制重绘；页面已崩溃（`isCrashed()`）时直接走窗口重建。
+  2. 事件自愈 `heal()`：`powerMonitor` 的 resume / unlock-screen、GPU 进程崩溃（`app.on('child-process-gone')`）触发 hide→show 重建合成表面 + 重新置顶 + 强制重绘（窗口隐藏时不打扰）。
+  3. 页面崩溃自动重建：悬浮窗自身 `render-process-gone` → 10s 节流（`RECREATE_GUARD_MS`，防崩溃循环）→ 销毁重建窗口；重建前 `onDetachViews`（= `floatViews.setLayout([])`）把站点视图从旧窗口摘下留缓存，新页面 boot 后 `floatStore.sync → FViewSetLayout` 自动重挂，位置尺寸从旧窗口 bounds 恢复。
+  4. 显示器拓扑自愈：`display-removed` / `display-metrics-changed` → `reclamp()` 把窗口夹回现存工作区（防窗口留在已断开的显示器上）；`setVisibleOnAllWorkspaces(true)` 保证虚拟桌面切换/全屏应用不丢胶囊。
+
+### 验证结果
+
+- **dev 锤击**（临时注入 Ctrl+Shift+K → `webContents.forcefullyCrashRenderer()`，验证后已删除）：崩溃 → 旧窗销毁 → 新窗口**同位置同尺寸**自动重建（window_id 1510448 → 1575984），electron 进程与主窗存活；采样新窗口内容区像素为站点页面深色系（非 float.html 米色底 #FAF9F5），证明站点视图已随新窗口重挂。
+- 回归：typecheck 通过；95/95 单测通过；清除临时代码后再次 typecheck 通过。
+- 打包：v0.3.4 双包 68.1/68.3MB（与 v0.3.3 持平，本版为行为修复无体积变化）；打包版启动、进程/窗口枚举正常。
+- 打包冒烟说明：验证期间用户正在使用机器（前台为资源管理器窗口），UI 级点击/像素采样被干扰，故打包版冒烟止步于进程/窗口级，交互级验证以 dev 锤击为准；托盘唤醒路径与 v0.3.3 冒烟一致（toggle → show，show 内部新增的两个调用不影响路径结构），待用户日常使用确认。
+
+### 遗留问题
+
+- `heal()` 只在已知事件（锁屏/解锁/GPU 崩溃/显示器变化）后触发；若存在其他导致透明表面失效的路径（如驱动热重置不经 GPU 进程重启），仍需切桌面恢复——真实长时间运行场景（锁屏/休眠过夜）待用户日常使用验证。
+- v0.3.3 遗留照旧：已放弃 SwiftShader 兜底（虚拟机/RDP 白屏可从 afterPack `DROP_RUNTIME` 回滚）；dev 任务栏 electron.exe 默认图标、watcher 补丁锚点、v0.3.1 各项。
+
 ## v0.3.3（2026-09-19）
 
 打包产物删除 SwiftShader/Vulkan 软件渲染兜底文件，exe 再减 ~1.5MB（v0.3.2 遗留项落地）。

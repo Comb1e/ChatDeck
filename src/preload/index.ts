@@ -37,7 +37,10 @@ const api: DeckApi = {
     setActiveProvider: (id: string): void => ipcRenderer.send(IPC.FloatSetProvider, id)
   },
   app: {
-    openSettings: () => ipcRenderer.invoke(IPC.AppOpenSettings) as Promise<boolean>
+    openSettings: () => ipcRenderer.invoke(IPC.AppOpenSettings) as Promise<boolean>,
+    getAutostart: () => ipcRenderer.invoke(IPC.AppGetAutostart) as Promise<boolean>,
+    setAutostart: (enabled: boolean) =>
+      ipcRenderer.invoke(IPC.AppSetAutostart, Boolean(enabled)) as Promise<boolean>
   },
   clipboard: {
     writeText: (text: string) => ipcRenderer.invoke(IPC.ClipboardWrite, text)

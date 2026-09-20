@@ -79,6 +79,19 @@ async function resetPrompts(): Promise<void> {
   ui.showToast('提示词库已恢复默认')
 }
 
+// ---------- 开机自启 ----------
+const autostart = ref(false)
+
+onMounted(async () => {
+  autostart.value = await window.api.app.getAutostart()
+})
+
+async function toggleAutostart(): Promise<void> {
+  const real = await window.api.app.setAutostart(!autostart.value)
+  autostart.value = real
+  ui.showToast(real ? '已开启开机自启' : '已关闭开机自启')
+}
+
 // ---------- 新增自定义厂商 ----------
 const showAdd = ref(false)
 const addForm = reactive({ name: '', url: '', color: '#d97757' })
@@ -186,9 +199,30 @@ async function addProvider(): Promise<void> {
     </section>
 
     <section>
+      <h3 class="sec-title">通用</h3>
+      <div class="row general-row">
+        <div class="general-info">
+          <div class="general-name">开机自动启动</div>
+          <div class="general-desc">登录 Windows 后自动运行并显示悬浮窗</div>
+        </div>
+        <span class="grow" />
+        <button
+          class="switch"
+          :class="{ on: autostart }"
+          role="switch"
+          :aria-checked="autostart"
+          :title="autostart ? '点击关闭开机自启' : '点击开启开机自启'"
+          @click="toggleAutostart()"
+        >
+          <span class="knob" />
+        </button>
+      </div>
+    </section>
+
+    <section>
       <h3 class="sec-title">关于</h3>
       <p class="about">
-        ChatDeck v0.3.6 · 国内大模型聚合工作台<br />
+        ChatDeck v0.3.7 · 国内大模型聚合工作台<br />
         每个站点使用独立存储，登录数据仅保存在本机。<br />
         快捷键：Ctrl + 1~9 切换站点（悬浮窗），Ctrl + Q 划词翻译。
       </p>
@@ -385,6 +419,26 @@ async function addProvider(): Promise<void> {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.general-row {
+  padding: 7px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.general-row:hover {
+  background: var(--bg);
+}
+
+.general-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.general-desc {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 2px;
 }
 
 .color-label {

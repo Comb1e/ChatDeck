@@ -1,14 +1,14 @@
 {
   "providers": [
-    { "id": "deepseek", "name": "DeepSeek", "url": "https://chat.deepseek.com/", "color": "#4D6BFE" },
-    { "id": "kimi", "name": "Kimi", "url": "https://www.kimi.com/", "color": "#1B1F27" },
-    { "id": "doubao", "name": "豆包", "url": "https://www.doubao.com/chat/", "color": "#175DFF" },
-    { "id": "qwen", "name": "通义千问", "url": "https://www.tongyi.com/", "color": "#615CED" },
-    { "id": "chatglm", "name": "智谱清言", "url": "https://chatglm.cn/", "color": "#3859FF" },
-    { "id": "yuanbao", "name": "腾讯元宝", "url": "https://yuanbao.tencent.com/", "color": "#0052D9" },
-    { "id": "yiyan", "name": "文心一言", "url": "https://yiyan.baidu.com/", "color": "#3E4A5A" },
-    { "id": "spark", "name": "讯飞星火", "url": "https://xinghuo.xfyun.cn/desk", "color": "#0077FF" },
-    { "id": "hailuo", "name": "海螺AI", "url": "https://www.hailuo.ai/", "color": "#2A64F6" },
-    { "id": "metaso", "name": "秘塔AI搜索", "url": "https://metaso.cn/", "color": "#0F8A8A" }
+    { "id": "deepseek", "name": "DeepSeek", "url": "https://chat.deepseek.com/", "color": "#4D6BFE", "autoSleepMinutes": 0 },
+    { "id": "kimi", "name": "Kimi", "url": "https://www.kimi.com/", "color": "#1B1F27", "autoSleepMinutes": 5 },
+    { "id": "doubao", "name": "豆包", "url": "https://www.doubao.com/chat/", "color": "#175DFF", "autoSleepMinutes": 5 },
+    { "id": "qwen", "name": "通义千问", "url": "https://www.tongyi.com/", "color": "#615CED", "autoSleepMinutes": 5 },
+    { "id": "chatglm", "name": "智谱清言", "url": "https://chatglm.cn/", "color": "#3859FF", "autoSleepMinutes": 5 },
+    { "id": "yuanbao", "name": "腾讯元宝", "url": "https://yuanbao.tencent.com/", "color": "#0052D9", "autoSleepMinutes": 5 },
+    { "id": "yiyan", "name": "文心一言", "url": "https://yiyan.baidu.com/", "color": "#3E4A5A", "autoSleepMinutes": 5 },
+    { "id": "spark", "name": "讯飞星火", "url": "https://xinghuo.xfyun.cn/desk", "color": "#0077FF", "autoSleepMinutes": 5 },
+    { "id": "hailuo", "name": "海螺AI", "url": "https://www.hailuo.ai/", "color": "#2A64F6", "autoSleepMinutes": 5 },
+    { "id": "metaso", "name": "秘塔AI搜索", "url": "https://metaso.cn/", "color": "#0F8A8A", "autoSleepMinutes": 5 }
   ]
 }

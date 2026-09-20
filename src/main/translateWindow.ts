@@ -12,6 +12,8 @@ export interface TranslatePopupDeps {
 
 /** 无交互时的自动隐藏时长;用户点击弹窗(获得焦点)后取消,失焦改为重排计时 */
 const AUTO_HIDE_MS = 10_000
+/** 隐藏后的闲置销毁时长:销毁释放整个渲染进程,下次 show() 重建(lastState 在主进程不丢失) */
+const IDLE_DESTROY_MS = 10 * 60_000
 
 /**
  * 译文弹窗:依附悬浮窗正上方的小窗,平时隐藏,不持久化位置。
@@ -21,6 +23,7 @@ export class TranslatePopupController {
   private win: BrowserWindow | null = null
   private lastState: TranslatePopupState | null = null
   private hideTimer: ReturnType<typeof setTimeout> | null = null
+  private destroyTimer: ReturnType<typeof setTimeout> | null = null
   /** 首次创建时页面未就绪,ready-to-show 后再补显示(防 Windows 透明窗闪黑底) */
   private pendingShow = false
 
@@ -45,6 +48,7 @@ export class TranslatePopupController {
   hide(): void {
     this.cancelAutoHide()
     this.getWindow()?.hide()
+    this.scheduleIdleDestroy()
   }
 
   repositionIfVisible(): void {
@@ -69,6 +73,7 @@ export class TranslatePopupController {
   }
 
   private positionAndShow(win: BrowserWindow): void {
+    this.cancelIdleDestroy()
     const bounds = this.deps.getFloatBounds()
     if (!bounds) return
     const area = screen.getDisplayMatching(bounds).workArea
@@ -90,6 +95,25 @@ export class TranslatePopupController {
     if (this.hideTimer) {
       clearTimeout(this.hideTimer)
       this.hideTimer = null
+    }
+  }
+
+  private scheduleIdleDestroy(): void {
+    this.cancelIdleDestroy()
+    this.destroyTimer = setTimeout(() => {
+      this.destroyTimer = null
+      const win = this.getWindow()
+      if (win && !win.isVisible()) {
+        win.destroy()
+        this.win = null
+      }
+    }, IDLE_DESTROY_MS)
+  }
+
+  private cancelIdleDestroy(): void {
+    if (this.destroyTimer) {
+      clearTimeout(this.destroyTimer)
+      this.destroyTimer = null
     }
   }
 

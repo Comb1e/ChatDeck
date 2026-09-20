@@ -48,6 +48,9 @@ app（单实例 + 托盘常驻）
 - **独立持久化**：悬浮窗位置/展开态/活动站点存 `float-state.json`，与 `ui-state.json` 分文件，避免渲染层整包写 ui-state 时互相覆盖。
 - **拖动硬钳制**：`will-move`（手动拖动落地前触发，程序性 setBounds 不触发）逐帧钳制位置（`shared/floatLayout.ts` 的 `clampDragBounds` 纯函数）——底边完全不允许越过工作区底（拖不进任务栏），左右上允许部分越界但保留 8px 可见条带（兼顾跨显示器拖动）；拖动结束落盘前再用 `clampPoint` 兜底钳制并持久化，启动还原位置同样过 `clampPoint`（历史坏位置自动治愈）。
 - **久跑自愈（v0.3.4）**：透明窗口在锁屏/休眠/显卡驱动重置后 DWM 合成表面可能失效（整窗透明"消失"，但 `isVisible()` 仍为 true，托盘 toggle 第一击反而执行隐藏），且 'floating' 置顶级别可能丢失。四层防护：`show()` 每次重新断言置顶并 `webContents.invalidate()` 强制重绘；`powerMonitor` resume/unlock-screen 与 GPU 进程崩溃（`child-process-gone`）触发 `heal()`（hide→show 重建表面）；悬浮窗自身页面崩溃（`render-process-gone`）经 10s 节流后**重建整个窗口**（重建前 `onDetachViews` 把站点视图摘下留缓存，新页面 boot 后 `floatStore.sync → setLayout` 自动重挂）；`display-removed`/`display-metrics-changed` 触发 `reclamp()` 把窗口夹回现存工作区。另有 `setVisibleOnAllWorkspaces(true)`：虚拟桌面切换/全屏应用不丢胶囊。
+- **后台站点休眠（v0.3.5，内存优化核心）**：站点视图（WebContentsView）一旦创建就是一整个 Chromium 渲染进程（100~300MB），久跑内存增长的大头。每站点可配置 `autoSleepMinutes`（0=永不休眠；内置默认写在 providers.default.json——DeepSeek 0、其余 5；用户层可覆盖，自定义站点缺省回退 `DEFAULT_AUTO_SLEEP_MINUTES=5`）。主进程每 60s 扫一遍两个 ViewManager：视图「可见」= 以非零矩形挂在宿主窗口上且窗口可见未最小化（折叠零矩形/被切走/窗口隐藏都算不可见）；不可见时长超过该站点阈值即销毁其 webContents（状态机走 `sleep` 事件 → `sleeping`，`render-process-gone` 处理器有 `views.get(id)===mv` 守卫防销毁瞬间误报 crashed）。切回该站点时 `ensureView` 自动重建并重载——**登录态保留在 persist 分区，但页面运行状态（滚动位置/未发送草稿）丢失**。窗口 `show`/`restore` 时按 `lastLayout`（最近一次 setLayout 快照）自动重建被休眠的视图，避免托盘唤回主窗后窗格空白。悬浮窗快速折叠/展开在阈值内不触发重载。
+- **删除站点彻底清理（v0.3.5）**：`ProvidersRemove` 确认删除生效（自定义站点）后，两侧 ViewManager `discardProvider`（销毁视图 + 忘记注册，`discardView` 与 clearData/休眠共用一套摘除→延迟 close→广播流程）+ `providers.clearData` 清空分区存储，不再残留孤儿分区。视图销毁统一走 `discardView`；分区存储只由 `ProviderStore.clearData` 清（原先 viewManager 与 providerStore 各清一次的重复已去除）。
+- **ProviderStore 内存缓存（v0.3.5，CPU 优化）**：`list()` 结果缓存（save/remove/init 失效）——`ViewSetLayout` 每次都调 `ensureProviders → providers.list()`，而 layout.sync 在窗口缩放的每个 ResizeObserver tick 都会触发，原先等于**每帧一次磁盘读+merge**。`ProvidersSave`/`ProvidersList` 会把最新 Provider 快照同步注册进**两个**管理器（原先只进桌面侧，悬浮窗侧拿到过期快照，改休眠阈值/UA 对悬浮窗不生效）。
 - **dev watcher 防抖 + 守卫**：main/preload 的 `build.watch.buildDelay: 400` 合并快速连续编辑（rollup watch 对失败/空重建会删除上一轮产物，与重启竞态曾导致 out/main 写空、dev 死亡）；`scripts/patch-electron-vite.mjs`（postinstall 重放）给 electron-vite 重启逻辑加"入口产物缺失则跳过本次重启"的守卫。
 - 透明窗口注意：`backgroundColor` 必须 `#00000000`；`ready-to-show` 后再 show（防 Windows 黑底）；折叠高度 64 是 Windows 非可调窗口的系统最小高度，设 48 会被静默抬升。
 
@@ -70,7 +73,7 @@ Ctrl+Q (globalShortcut, 系统级)
 - **方向解析**（`shared/translate.ts` 纯函数）：`auto` = 含 CJK（汉字/假名/谚文）→ 目标英文，否则 → 目标中文；显式语言对（中↔英/日/韩、中→俄/法/德/西）原样直传。
 - **弹窗只显示译文**；点击译文复制；方向选择器切换即持久化（`translate:set-pair`）。
 - **跟随与级联**：悬浮窗 move/折叠展开（防抖后）→ `onMoved` → 弹窗重定位；悬浮窗隐藏 → `onHide` → 弹窗隐藏；悬浮窗未创建时 Ctrl+Q 直接忽略。
-- **显隐规则**：聚焦（如点击复制）取消自动隐藏；失焦不立即隐藏而是重排 10s 计时——原生 `<select>` 下拉会短暂夺走焦点，直接隐藏会让方向选择无法使用；无交互 10s 自动隐藏。Esc/✕ 随时关闭。
+- **显隐规则**：聚焦（如点击复制）取消自动隐藏；失焦不立即隐藏而是重排 10s 计时——原生 `<select>` 下拉会短暂夺走焦点，直接隐藏会让方向选择无法使用；无交互 10s 自动隐藏。Esc/✕ 随时关闭。弹窗隐藏后再闲置 10 分钟整体销毁释放渲染进程，下次划词重建（lastState 存主进程不丢失）。
 - **凭据**：只在主窗口设置界面填写，存 `userData/translate.user.json`，不进源码；请求只从主进程发起（渲染层 CSP 不放行外网）。
 - 取词失败（无选区/该应用 Ctrl+C 非复制语义）静默不弹窗；剪贴板还原覆盖文本与图片，富文本/文件等格式为已知限制。
 
@@ -116,9 +119,10 @@ idle ─attach─▶ loading ─load-success─▶ ready
                  ▼                       ▼
               loading ◀──reload────── crashed
 detach（任意态 → idle，仅移出窗口）
+sleep（任意态 → sleeping，视图已销毁释放内存，切回时经 attach 重建重载）
 ```
 
-规则：`load-success` 只在 loading 态生效；`reload` 只在 failed/crashed 态转移；loading 中不允许再 reload（防竞态）。
+规则：`load-success` 只在 loading 态生效；`reload` 只在 failed/crashed 态转移；loading 中不允许再 reload（防竞态）；`attach` 从 idle/sleeping 都进入 loading（sleeping 的视图已销毁，由 ensureView 重建）。后台休眠判定 `shouldSleepNow` 是同文件纯函数：可见放行，不可见且距上次可见 ≥ 阈值即休眠，阈值 ≤0 永不休眠。
 
 ### 2. 布局状态机（`stores/layout.ts`）
 
@@ -153,7 +157,7 @@ src/preload/          contextBridge：index.ts（主 API，桌面版/悬浮窗/�
 src/renderer/         界面：index.html（桌面版）+ float.html（悬浮窗）+ translate.html（译文弹窗）
 src/renderer/src/float/  悬浮窗渲染层：floatStore + FloatApp/FloatHeader/FloatPrompts/FloatPill
 src/renderer/src/translate/  译文弹窗渲染层：TranslatePopup
-tests/                Vitest 单测（只测 shared 纯函数，88 个用例）
+tests/                Vitest 单测（shared 纯函数 + 主进程 store/ViewManager（electron 打桩），118 个用例）
 ```
 
 ## 打包与分发（electron-builder）

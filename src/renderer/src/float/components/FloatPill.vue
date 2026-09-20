@@ -46,11 +46,22 @@ function expand(): void {
 }
 
 .pulse {
+  position: relative;
   width: 9px;
   height: 9px;
   border-radius: 50%;
   flex-shrink: 0;
+  /* 呼吸只动 opacity：box-shadow 动画无法合成器加速，会让透明置顶窗口全天重绘 */
   animation: breathe 2.4s ease-in-out infinite;
+}
+
+/* 辉光用静态 box-shadow 放在伪元素上，随父级 opacity 一起呼吸（视觉不变） */
+.pulse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 6px var(--glow);
 }
 
 .brand {
@@ -94,11 +105,9 @@ function expand(): void {
   0%,
   100% {
     opacity: 1;
-    box-shadow: 0 0 6px var(--glow);
   }
   50% {
     opacity: 0.45;
-    box-shadow: 0 0 2px var(--glow);
   }
 }
 </style>

@@ -1,5 +1,40 @@
 # 迭代记录
 
+## v0.3.5（2026-09-20）
+
+性能优化：内存为主（后台站点自动休眠 + 删除站点彻底清理），兼顾 CPU（逐帧磁盘读写消除）与 GPU（药丸辉光合成器化）。
+
+### 上版问题
+
+- 站点视图（WebContentsView）一旦打开永不销毁：`setLayout` 只 detach 保留缓存、悬浮窗隐藏用零矩形常驻挂载、`views` Map 无上限。每个站点渲染进程 100~300MB，久跑内存持续增长。
+- 删除自定义站点只改 `providers.user.json`：两侧视图与 `persist:provider-<id>` 分区存储全部残留（自定义 id 带时间戳，同名重建生成新分区，旧分区成永久孤儿）。
+- `ViewSetLayout` 每次调用 `ensureProviders → providers.list()` 都重读 `providers.user.json` + JSON.parse + merge；而 `layout.sync()` 在窗口缩放的每个 ResizeObserver tick 都触发——拖拽缩放窗口 = 每帧一次磁盘读。
+- 悬浮药丸辉光直接动画 box-shadow（无法合成器加速），透明置顶窗口全天持续重绘；翻译弹窗首次使用后隐藏常驻不销毁，多占一个渲染进程。
+
+### 方法（根因）
+
+- **后台站点自动休眠（核心，用户确认默认值）**：`Provider` 增 `autoSleepMinutes`（0=永不；`providers.default.json` 内置默认 DeepSeek=0、其余=5；用户层可覆盖、自定义站点缺省回退 `DEFAULT_AUTO_SLEEP_MINUTES=5`）。`ViewManager.sweepSleep()` 每 60s 扫描两个管理器：可见（非零矩形挂载 且 宿主窗口可见未最小化）→ 刷新时间戳；不可见超过该站点阈值 → `discardView` 销毁 webContents（摘除→延迟 close→删 Map→广播 `sleeping`，clearData/删除站点/休眠三路共用）。状态机增 `sleeping` 态 + `sleep` 事件（`shouldSleepNow` 纯函数：可见放行、阈值 ≤0 永不休眠）。切回时 `ensureView` 自动重建重载——登录态保留在 persist 分区，页面运行状态（滚动/草稿）丢失。窗口 `show`/`restore` 时按 `lastLayout`（最近一次 setLayout 快照）自动重建被休眠视图，防止托盘唤回主窗后窗格空白。`render-process-gone` 加 `views.get(id)===mv` 守卫，防销毁瞬间误报 crashed。
+- **删除站点彻底清理**：`ProvidersRemove` 确认删除生效（自定义站点；内置删除是 no-op 不误清）后，两侧 `discardProvider`（销毁视图+忘记注册）+ `providers.clearData`（清分区存储/缓存）；`viewManager.clearData` 原与 `providerStore.clearData` 重复清两次存储的路径去除。
+- **CPU**：`ProviderStore.list()` 结果内存缓存（save/remove/init 失效），消除每帧磁盘读；`ProvidersSave`/`ProvidersList` 把最新快照同步注册进**两个**管理器（原先 floatViews 持过期快照，改休眠阈值/UA 对悬浮窗不生效）。
+- **GPU**：药丸辉光改静态 box-shadow（`::after` 伪元素承载）+ 仅动画 opacity，视觉不变、合成器友好。
+- **其他**：站点视图 `spellcheck: false`（省词典下载/内存）；翻译弹窗隐藏后再闲置 10 分钟销毁窗口、下次划词重建（lastState 存主进程不丢失）。
+- **设置界面**：每站点行内「后台休眠」下拉（不休眠/1/5/10/15/30/60 分钟），即改即存、注册同步后双窗口立即生效。
+
+### 验证结果
+
+- 回归：typecheck 通过；118/118 单测通过（新增：sleep 状态转移与越权事件、`shouldSleepNow` 边界（阈值 0/可见/恰达阈值）、`effectiveAutoSleepMinutes` 回退、ProviderStore 合并 + 缓存失效读盘打点、ViewManager 休眠扫描 electron 打桩集成 5 例）。
+- **dev 自动化锤击**（临时 bootstrap 钩子驱动真实 `setLayout` 时间线，验证后已删除，grep 临时=0）：boot 挂 DeepSeek → +8s 切 Kimi（DS 转后台）→ +16s 切 ChatGLM（Kimi 转后台）。基线 4 渲染进程 / 总私有内存 **735.3MB**（DS 61.2 + Kimi 167.1 + ChatGLM 195.2 + 主页 32.7）；休眠扫描日志逐分钟正确（`deepseek threshold=0min` 永不休眠、`kimi threshold=5min` 递增）。约 6 分钟 Kimi 渲染进程退出：3 渲染进程 / 总私有内存 **533.8MB**，**净释放 ~201.5MB**，DS 与 ChatGLM 存活、主进程稳定。
+- **remount 锤击**：隐藏窗口 → 挂载 kimi → 强制超阈值 sweep（kimi 与原活动站点均休眠销毁）→ `win.show()` → 日志确认按 lastLayout 自动重建 kimi 视图并重新加载。托盘唤回主窗不再出现空白窗格。
+- 打包：v0.3.5 双包 68.1/68.3MB（与 v0.3.4 持平，本版为行为优化无体积变化）；afterPack 裁剪正常（locales 39.3MB + swiftshader/vulkan 6.1MB）；打包版启动冒烟通过（7 进程 / 2 渲染进程 = 主页 + 恢复的活动站点视图，总私有内存 509MB，进程级验证，UI 级以 dev 锤击为准）。
+- 用户观察记录：验证期间用户报告"首次启动 LLM 页面盖住左侧栏"——经查为当时仍在运行的**临时验证钩子**把测试视图挂在 x:0 所致（原生视图层级高于 HTML），非产品代码问题；产品矩形由渲染层按工作区计算（boot 日志 `deepseek:1188x783` = 1440 − 侧栏 252），临时代码清除后干净启动无此现象。
+
+### 遗留问题
+
+- 休眠销毁的是"页面运行状态"：站点内未发送草稿、滚动位置、SPA 内页状态在休眠后丢失（登录态保留）。若某站点用户依赖草稿，可在设置中把该站点设为「不休眠」。
+- 后台音频：被休眠/前台切走的站点若在播放音频，休眠会中止播放（预期行为）；未做"播放中禁止休眠"检测，待用户反馈再议。
+- 孤儿分区磁盘清理（历史版本删除站点遗留的 `Partitions/provider-*` 目录）未做自动回收，可后续在启动时比对 provider 清单清理。
+- v0.3.4 遗留照旧：heal 仅覆盖已知事件，真实过夜锁屏场景待用户日常验证；v0.3.3 遗留（SwiftShader 回滚开关、dev 图标、watcher 补丁锚点）与 v0.3.1 遗留（~68MB Electron 地板、跨显示器钳制细节）照旧。
+
 ## v0.3.4（2026-09-19）
 
 修复：悬浮窗久跑自动消失、托盘右键唤醒失败（切到桌面再唤醒才有效）。

@@ -130,6 +130,15 @@ async function bootstrap(): Promise<void> {
   registerIpc({ ...stores, views: viewManager, floatViews, floatWin, translate, translateWin })
   registerTranslateHotkey()
 
+  // 后台站点休眠扫描:每分钟检查一次,超过站点休眠阈值未显示的站点视图销毁释放内存
+  setInterval(
+    () => {
+      viewManager.sweepSleep()
+      floatViews.sweepSleep()
+    },
+    60_000
+  )
+
   // 透明悬浮窗自愈:锁屏/休眠唤醒/显卡驱动重置后 DWM 合成表面可能失效(整窗透明"消失",
   // isVisible 仍为 true 导致托盘第一击 toggle 反而执行隐藏),在这些事件后强制恢复;
   // 显示器拓扑变化(断开/分辨率变更)则把窗口夹回现存工作区。

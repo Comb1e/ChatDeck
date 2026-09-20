@@ -1,6 +1,6 @@
 import { clipboard, ipcMain } from 'electron'
 import { IPC } from '@shared/ipc'
-import type { PaneLayoutEntry, ProviderInput, PromptInput, UiState } from '@shared/types'
+import type { PaneLayoutEntry, Provider, ProviderInput, PromptInput, UiState } from '@shared/types'
 import type { ProviderStore } from './store/providerStore'
 import type { PromptStore } from './store/promptStore'
 import type { StateStore } from './store/stateStore'
@@ -34,20 +34,35 @@ export function registerIpc(deps: IpcDeps): void {
     }
   }
 
+  /** 配置变更后把最新 Provider 快照同步进两个视图管理器(休眠阈值/UA 等立即生效) */
+  const registerAll = (items: Provider[]): void => {
+    for (const p of items) {
+      views.registerProvider(p)
+      floatViews.registerProvider(p)
+    }
+  }
+
   ipcMain.handle(IPC.ProvidersList, async () => {
     const items = await providers.list()
-    for (const p of items) views.registerProvider(p)
+    registerAll(items)
     return items
   })
 
   ipcMain.handle(IPC.ProvidersSave, async (_e, input: ProviderInput) => {
     const items = await providers.save(input)
-    for (const p of items) views.registerProvider(p)
+    registerAll(items)
     return items
   })
 
   ipcMain.handle(IPC.ProvidersRemove, async (_e, id: string) => {
     const items = await providers.remove(id)
+    // 确认删除生效(自定义站点)才清理:销毁两侧视图并清空分区存储;
+    // 内置站点删除是 no-op,误传的未知 id 也不动
+    if (!items.some((p) => p.id === id)) {
+      views.discardProvider(id)
+      floatViews.discardProvider(id)
+      await providers.clearData(id)
+    }
     return items
   })
 

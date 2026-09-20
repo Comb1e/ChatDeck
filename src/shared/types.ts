@@ -10,6 +10,8 @@ export interface Provider {
   builtin: boolean
   /** 覆盖默认 User-Agent（可选） */
   userAgent?: string
+  /** 后台休眠分钟数（0=永不休眠；缺省回退 DEFAULT_AUTO_SLEEP_MINUTES） */
+  autoSleepMinutes?: number
 }
 
 /** 新增/编辑厂商时由渲染层提交的字段 */
@@ -20,6 +22,7 @@ export interface ProviderInput {
   color?: string
   enabled?: boolean
   userAgent?: string
+  autoSleepMinutes?: number
 }
 
 /** 预设提示词 */
@@ -55,8 +58,8 @@ export interface Rect {
   height: number
 }
 
-/** 主进程视图状态，用于侧边栏/窗格头展示 */
-export type ViewLoadState = 'loading' | 'ready' | 'failed' | 'crashed'
+/** 主进程视图状态，用于侧边栏/窗格头展示（sleeping=视图已休眠卸载，切回时重建） */
+export type ViewLoadState = 'loading' | 'ready' | 'failed' | 'crashed' | 'sleeping'
 
 export interface PaneLayoutEntry {
   id: string
@@ -76,4 +79,14 @@ export interface ActiveChangedEvent {
 export interface LoadStateChangedEvent {
   id: string
   state: ViewLoadState
+}
+
+/** 站点后台休眠默认阈值（分钟）：超过该时长未显示的站点视图被卸载以释放内存 */
+export const DEFAULT_AUTO_SLEEP_MINUTES = 5
+
+/** 站点后台休眠分钟数；未配置或非法负值回退全局默认 */
+export function effectiveAutoSleepMinutes(p: Pick<Provider, 'autoSleepMinutes'>): number {
+  return typeof p.autoSleepMinutes === 'number' && p.autoSleepMinutes >= 0
+    ? p.autoSleepMinutes
+    : DEFAULT_AUTO_SLEEP_MINUTES
 }

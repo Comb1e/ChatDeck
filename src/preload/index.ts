@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '@shared/ipc'
 import type { DeckApi } from '@shared/api'
-import type { PaneLayoutEntry, PromptInput, ProviderInput } from '@shared/types'
+import type { PaneLayoutEntry, PromptInput, ProviderInput, Rect } from '@shared/types'
 import type { TranslateConfig, TranslatePairId, TranslatePopupState } from '@shared/translate'
 
 /**
@@ -31,10 +31,18 @@ const api: DeckApi = {
   },
   float: {
     toggle: () => ipcRenderer.invoke(IPC.FloatToggle),
-    resize: (expanded: boolean) => ipcRenderer.invoke(IPC.FloatResize, expanded),
+    collapse: () => ipcRenderer.invoke(IPC.FloatCollapse) as Promise<boolean>,
     hide: () => ipcRenderer.invoke(IPC.FloatHide),
     getState: () => ipcRenderer.invoke(IPC.FloatGetState),
-    setActiveProvider: (id: string): void => ipcRenderer.send(IPC.FloatSetProvider, id)
+    setActiveProvider: (id: string): void => ipcRenderer.send(IPC.FloatSetProvider, id),
+    pushUnread: (count: number): void => ipcRenderer.send(IPC.FloatUnreadCount, count)
+  },
+  whale: {
+    ready: (): void => ipcRenderer.send(IPC.WhaleReady),
+    getWorkarea: () => ipcRenderer.invoke(IPC.WhaleGetWorkarea) as Promise<Rect>,
+    setInteractive: (on: boolean): void => ipcRenderer.send(IPC.WhaleSetInteractive, Boolean(on)),
+    expand: (pose: { x: number; y: number }) =>
+      ipcRenderer.invoke(IPC.WhaleExpand, pose) as Promise<boolean>
   },
   app: {
     openSettings: () => ipcRenderer.invoke(IPC.AppOpenSettings) as Promise<boolean>,
@@ -67,6 +75,20 @@ const api: DeckApi = {
     },
     loadStateChanged: (cb): void => {
       ipcRenderer.on(IPC.EvFLoadStateChanged, (_e, payload) => cb(payload))
+    }
+  },
+  onWhale: {
+    cursor: (cb): void => {
+      ipcRenderer.on(IPC.EvWhaleCursor, (_e, payload) => cb(payload))
+    },
+    workarea: (cb): void => {
+      ipcRenderer.on(IPC.EvWhaleWorkarea, (_e, payload) => cb(payload))
+    },
+    command: (cb): void => {
+      ipcRenderer.on(IPC.EvWhaleCommand, (_e, payload) => cb(payload))
+    },
+    unread: (cb): void => {
+      ipcRenderer.on(IPC.EvWhaleUnread, (_e, payload) => cb(payload))
     }
   }
 }

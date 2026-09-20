@@ -1,0 +1,230 @@
+import { join } from 'node:path'
+import { app, BrowserWindow, screen } from 'electron'
+import { performance } from 'node:perf_hooks'
+import { IPC } from '@shared/ipc'
+import { WHALE_CONFIG } from '@shared/whaleConfig'
+import type { Rect } from '@shared/types'
+
+/**
+ * 鲸鱼窗口(悬浮窗压缩形态)控制器——窗口规格与 whale-pet 保持一致:
+ * 透明无边框窗口覆盖主显示器工作区,鲸鱼完全在 Chromium 内游动(原生窗口不动);
+ * 默认鼠标穿透,渲染层检测到悬停后才开启交互(setIgnoreMouseEvents forward)。
+ * 渲染层初始化完成(whale:ready)后再显示,避免闪空。
+ */
+export class WhaleWindowController {
+  private win: BrowserWindow | null = null
+  private workarea: Rect | null = null
+  private cursorTimer: ReturnType<typeof setInterval> | null = null
+  private readonly lastCursor = { x: -1, y: -1 }
+  private booted = false // 渲染层已就绪,此后 show() 可直接显形
+  private wanted = false // 曾被请求显示(首显前缓存请求)
+  private unreadCount = 0
+
+  getWindow(): BrowserWindow | null {
+    return this.win && !this.win.isDestroyed() ? this.win : null
+  }
+
+  isVisible(): boolean {
+    const win = this.getWindow()
+    return !!win && win.isVisible()
+  }
+
+  currentWorkarea(): Rect {
+    return this.workarea ?? screen.getPrimaryDisplay().workArea
+  }
+
+  /** 展开悬浮窗等外部入口:显示鲸鱼(压缩形态) */
+  show(): void {
+    this.wanted = true
+    const win = this.getWindow()
+    if (!win) {
+      this.create()
+      return
+    }
+    if (win.webContents.isCrashed()) {
+      this.recreate()
+      return
+    }
+    if (this.booted) this.reveal()
+  }
+
+  hide(): void {
+    this.wanted = false
+    this.getWindow()?.hide()
+  }
+
+  /** 渲染层初始化完成(WhaleReady IPC)后显形 */
+  handleReady(): void {
+    this.booted = true
+    this.sendUnread()
+    if (this.wanted) this.reveal()
+  }
+
+  setInteractive(on: boolean): void {
+    const win = this.getWindow()
+    if (!win) return
+    win.setIgnoreMouseEvents(!on, { forward: true })
+  }
+
+  /** 主进程 → 鲸鱼:光标跟随/工作区/行为命令/未读数 */
+  sendSurfaceAt(pt: { x: number; y: number }): void {
+    const win = this.getWindow()
+    if (win) win.webContents.send(IPC.EvWhaleCommand, { type: 'surface', x: pt.x, y: pt.y })
+  }
+
+  sendJumpDive(): void {
+    const win = this.getWindow()
+    if (win) win.webContents.send(IPC.EvWhaleCommand, { type: 'jump-dive' })
+  }
+
+  setUnreadCount(n: number): void {
+    this.unreadCount = Math.max(0, Math.round(n))
+    this.sendUnread()
+  }
+
+  /** 鲸鱼世界坐标(工作区系)→ 屏幕坐标 */
+  screenFromWorld(p: { x: number; y: number }): { x: number; y: number } {
+    const area = this.currentWorkarea()
+    return { x: area.x + p.x, y: area.y + p.y }
+  }
+
+  /** 显示器变化后把窗口同步回主显示器工作区,并通知渲染层 */
+  syncWorkarea(): void {
+    const wa = screen.getPrimaryDisplay().workArea
+    this.workarea = wa
+    const win = this.getWindow()
+    if (!win) return
+    const bounds = win.getBounds()
+    if (
+      bounds.x !== wa.x ||
+      bounds.y !== wa.y ||
+      bounds.width !== wa.width ||
+      bounds.height !== wa.height
+    )
+      win.setBounds(wa)
+    win.webContents.send(IPC.EvWhaleWorkarea, wa)
+  }
+
+  /** 透明窗口自愈(与悬浮窗同款:DWM 合成表面失效后 hide→show 强制重建) */
+  heal(): void {
+    const win = this.getWindow()
+    if (!win || !win.isVisible()) return
+    if (win.webContents.isCrashed()) {
+      this.recreate()
+      return
+    }
+    win.setAlwaysOnTop(true, 'floating')
+    win.hide()
+    win.show()
+    win.webContents.invalidate()
+  }
+
+  destroy(): void {
+    if (this.cursorTimer) {
+      clearInterval(this.cursorTimer)
+      this.cursorTimer = null
+    }
+    this.getWindow()?.destroy()
+    this.win = null
+  }
+
+  // ------------------------------------------------------------------
+
+  private reveal(): void {
+    const win = this.getWindow()
+    if (!win || win.isVisible()) return
+    this.syncWorkarea()
+    win.setAlwaysOnTop(true, 'floating')
+    win.setVisibleOnAllWorkspaces(true)
+    win.show()
+    win.webContents.invalidate()
+  }
+
+  private recreate(): void {
+    this.destroy()
+    this.booted = false
+    if (this.wanted) this.create()
+  }
+
+  private create(): void {
+    const wa = this.currentWorkarea()
+    const win = new BrowserWindow({
+      ...wa,
+      transparent: true,
+      frame: false,
+      hasShadow: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      show: false,
+      title: 'ChatDeck 鲸鱼',
+      webPreferences: {
+        preload: join(__dirname, '../preload/index.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        spellcheck: false,
+        backgroundThrottling: false
+      }
+    })
+    // 与悬浮窗同级别置顶(压过普通应用窗口);默认鼠标穿透,悬停时由渲染层开启
+    win.setAlwaysOnTop(true, 'floating')
+    win.setVisibleOnAllWorkspaces(true)
+    win.setIgnoreMouseEvents(true, { forward: true })
+    win.on('closed', () => {
+      this.win = null
+    })
+    win.webContents.on('render-process-gone', () => {
+      if (this.getWindow() !== win) return
+      this.booted = false
+      if (this.wanted) this.recreate()
+    })
+    if (!app.isPackaged) {
+      // 开发期把鲸鱼渲染层日志转到终端,便于验证
+      win.webContents.on('console-message', (_e, _level, message) => {
+        console.log('[whale]', message)
+      })
+      win.webContents.on('before-input-event', (_e, input) => {
+        if (input.type === 'keyDown' && input.key === 'F12') {
+          win.webContents.openDevTools({ mode: 'detach' })
+        }
+      })
+    }
+    void this.loadPage(win)
+    this.win = win
+
+    // 光标轮询(视线跟随):位置未变不发送,静止光标下 IPC 降为 0
+    this.cursorTimer = setInterval(() => this.pollCursor(), WHALE_CONFIG.performance.cursorPollMs)
+  }
+
+  private async loadPage(win: BrowserWindow): Promise<void> {
+    if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
+      await win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/whale.html`)
+    } else {
+      await win.loadFile(join(__dirname, '../renderer/whale.html'))
+    }
+  }
+
+  private pollCursor(): void {
+    const win = this.getWindow()
+    if (!win || !win.isVisible()) return
+    const p = screen.getCursorScreenPoint()
+    if (p.x === this.lastCursor.x && p.y === this.lastCursor.y) return
+    this.lastCursor.x = p.x
+    this.lastCursor.y = p.y
+    win.webContents.send(IPC.EvWhaleCursor, {
+      x: p.x,
+      y: p.y,
+      at: performance.timeOrigin + performance.now()
+    })
+  }
+
+  private sendUnread(): void {
+    const win = this.getWindow()
+    if (win) win.webContents.send(IPC.EvWhaleUnread, this.unreadCount)
+  }
+}

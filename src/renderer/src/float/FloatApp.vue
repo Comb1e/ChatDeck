@@ -4,7 +4,6 @@ import { useFloatStore } from './floatStore'
 import { useProvidersStore } from '../stores/providers'
 import FloatHeader from './components/FloatHeader.vue'
 import FloatPrompts from './components/FloatPrompts.vue'
-import FloatPill from './components/FloatPill.vue'
 
 const float = useFloatStore()
 
@@ -30,11 +29,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <!-- 折叠态:小药丸,拖动移动,按钮展开 -->
-  <FloatPill v-if="float.ready && !float.expanded" />
-
-  <!-- 展开态:暗色玻璃面板 -->
-  <div v-else-if="float.ready" class="float">
+  <!-- 展开态:暗色玻璃面板(压缩形态是独立鲸鱼窗口,由主进程切换) -->
+  <div v-if="float.ready" class="float">
     <FloatHeader />
     <main class="content">
       <!-- 对话模式:该区域被主进程 WebContentsView 覆盖,HTML 无需绘制 -->

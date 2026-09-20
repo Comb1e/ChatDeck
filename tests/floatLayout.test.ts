@@ -6,7 +6,6 @@ import {
   FLOAT_EXPANDED,
   FLOAT_FRAME_PAD,
   FLOAT_HEADER_H,
-  FLOAT_PILL,
   FLOAT_PROMPTBAR_H,
   floatChatRect,
   floatPromptsRect
@@ -17,11 +16,6 @@ const WORK: Rect = { x: 0, y: 0, width: 1920, height: 1040 }
 const WORK_OFFSET: Rect = { x: -1920, y: 0, width: 1920, height: 1040 }
 
 describe('悬浮窗尺寸常量', () => {
-  it('折叠药丸小于展开态', () => {
-    expect(FLOAT_PILL.width).toBeLessThan(FLOAT_EXPANDED.width)
-    expect(FLOAT_PILL.height).toBeLessThan(FLOAT_EXPANDED.height)
-  })
-
   it('展开态能容纳头部与提示词条', () => {
     expect(FLOAT_HEADER_H + FLOAT_PROMPTBAR_H).toBeLessThan(FLOAT_EXPANDED.height)
   })
@@ -92,8 +86,8 @@ describe('clampPoint:窗口完全落在工作区内', () => {
 })
 
 describe('clampDragBounds:拖动硬钳制(底边挡任务栏,其余保留可见条带)', () => {
-  const W = FLOAT_PILL.width
-  const H = FLOAT_PILL.height
+  const W = 148
+  const H = 64
 
   it('界内位置不变', () => {
     expect(clampDragBounds({ x: 500, y: 500, width: W, height: H }, WORK)).toEqual({ x: 500, y: 500 })

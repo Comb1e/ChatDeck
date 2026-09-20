@@ -21,10 +21,22 @@ export const IPC = {
 
   // 悬浮窗窗口控制
   FloatToggle: 'float:toggle',
-  FloatResize: 'float:resize',
   FloatHide: 'float:hide',
   FloatGetState: 'float:get-state',
   FloatSetProvider: 'float:set-provider',
+  /** 悬浮窗内部:收起为鲸鱼形态 */
+  FloatCollapse: 'float:collapse',
+  /** 悬浮窗渲染层 → 主进程:未读站点数变化(鲸鱼头顶气泡显示用) */
+  FloatUnreadCount: 'float:unread-count',
+
+  // 鲸鱼形态(悬浮窗压缩态,移植自 whale-pet)
+  WhaleGetWorkarea: 'whale:get-workarea',
+  /** 悬浮在鲸鱼身上时开启窗口交互,离开后恢复鼠标穿透 */
+  WhaleSetInteractive: 'whale:set-interactive',
+  /** 鲸鱼渲染层初始化完成后再显示窗口(避免闪空) */
+  WhaleReady: 'whale:ready',
+  /** 单击鲸鱼:携带世界姿态,主进程据此定位并展开悬浮窗 */
+  WhaleExpand: 'whale:expand',
 
   // 设置窗口
   AppOpenSettings: 'app:open-settings',
@@ -45,6 +57,11 @@ export const IPC = {
   EvFTitleChanged: 'ev:f-title-changed',
   EvFActiveChanged: 'ev:f-active-changed',
   EvFLoadStateChanged: 'ev:f-load-state-changed',
+  // 主进程 → 鲸鱼渲染层事件(只发给鲸鱼窗口 webContents)
+  EvWhaleCursor: 'ev:whale-cursor',
+  EvWhaleWorkarea: 'ev:whale-workarea',
+  EvWhaleCommand: 'ev:whale-command',
+  EvWhaleUnread: 'ev:whale-unread',
   // 译文弹窗事件(只发给弹窗 webContents)
   EvTranslateResult: 'ev:translate-result'
 } as const

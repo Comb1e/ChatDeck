@@ -3,11 +3,14 @@ import { resourceFile } from './store/jsonStore'
 
 export interface TrayDeps {
   openSettings(): void
-  toggleFloat(): void
+  /** 展开⇄鲸鱼形态互切(悬浮窗展开时收起为鲸鱼;鲸鱼时展开悬浮窗) */
+  toggleForm(): void
+  /** 鲸鱼招牌动作:起跳下潜(仅鲸鱼形态可见时有效) */
+  jumpDive(): void
   quit(): void
 }
 
-/** 托盘:常驻入口。应用以悬浮窗+托盘形态运行,设置等入口都在这里 */
+/** 托盘:常驻入口。应用以鲸鱼/悬浮窗+托盘形态运行,设置等入口都在这里 */
 export class TrayController {
   private tray: Tray | null = null
 
@@ -23,7 +26,7 @@ export class TrayController {
     this.tray = new Tray(icon)
     this.tray.setToolTip('ChatDeck')
     this.tray.setContextMenu(this.buildMenu())
-    this.tray.on('click', () => this.deps.toggleFloat())
+    this.tray.on('click', () => this.deps.toggleForm())
   }
 
   destroy(): void {
@@ -34,7 +37,8 @@ export class TrayController {
   private buildMenu(): Menu {
     return Menu.buildFromTemplate([
       { label: '设置…', click: () => this.deps.openSettings() },
-      { label: '显示 / 隐藏悬浮窗', click: () => this.deps.toggleFloat() },
+      { label: '悬浮窗 ⇄ 鲸鱼', click: () => this.deps.toggleForm() },
+      { label: '鲸鱼招牌动作(起跳下潜)', click: () => this.deps.jumpDive() },
       { type: 'separator' },
       { label: '退出 ChatDeck', click: () => this.deps.quit() }
     ])

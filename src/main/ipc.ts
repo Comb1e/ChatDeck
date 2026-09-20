@@ -5,23 +5,37 @@ import type { ProviderStore } from './store/providerStore'
 import type { PromptStore } from './store/promptStore'
 import type { ViewManager } from './viewManager'
 import type { FloatWindowController } from './floatWindow'
+import type { WhaleWindowController } from './whaleWindow'
 import type { SettingsWindowController } from './settingsWindow'
 import type { TranslateService } from './translateService'
 import type { TranslatePopupController } from './translateWindow'
+
+/** 悬浮窗 ⇄ 鲸鱼(压缩形态)切换编排,由 index.ts 注入 */
+export interface FormSwitcher {
+  /** 收起悬浮窗,鲸鱼在悬浮窗原位置破水浮出 */
+  collapseToWhale(): void
+  /** 展开悬浮窗(可带屏幕锚点,如鲸鱼当前位置) */
+  expandFloat(at?: { x: number; y: number }): void
+  /** 展开⇄鲸鱼互切 */
+  toggleForm(): void
+}
 
 export interface IpcDeps {
   providers: ProviderStore
   prompts: PromptStore
   floatViews: ViewManager
   floatWin: FloatWindowController
+  whaleWin: WhaleWindowController
   settingsWin: SettingsWindowController
   translate: TranslateService
   translateWin: TranslatePopupController
+  forms: FormSwitcher
 }
 
 /** 注册全部 IPC；主→渲染事件经 hooks 由 viewManager 回调驱动 */
 export function registerIpc(deps: IpcDeps): void {
-  const { providers, prompts, floatViews, floatWin, settingsWin, translate, translateWin } = deps
+  const { providers, prompts, floatViews, floatWin, whaleWin, settingsWin, translate, translateWin, forms } =
+    deps
 
   /** 视图懒注册:站点尚未注册进管理器时按 id 补注册 */
   const ensureProviders = async (manager: ViewManager, ids: string[]): Promise<void> => {
@@ -95,16 +109,35 @@ export function registerIpc(deps: IpcDeps): void {
 
   // ---- 悬浮窗窗口控制 ----
 
-  ipcMain.handle(IPC.FloatToggle, () => floatWin.toggle())
-  ipcMain.handle(IPC.FloatResize, (_e, expanded: boolean) =>
-    floatWin.setExpanded(Boolean(expanded)).then(() => true)
-  )
+  ipcMain.handle(IPC.FloatToggle, () => {
+    forms.toggleForm()
+    return true
+  })
+  ipcMain.handle(IPC.FloatCollapse, () => {
+    forms.collapseToWhale()
+    return true
+  })
   ipcMain.handle(IPC.FloatHide, () => {
-    floatWin.hide()
+    // 「隐藏悬浮窗」= 收起为鲸鱼形态(压缩形态即悬浮窗的收起态)
+    forms.collapseToWhale()
     return true
   })
   ipcMain.handle(IPC.FloatGetState, () => floatWin.getState())
   ipcMain.on(IPC.FloatSetProvider, (_e, id: string) => floatWin.setActiveProvider(String(id)))
+  // 悬浮窗渲染层推送未读站点数 → 鲸鱼头顶气泡
+  ipcMain.on(IPC.FloatUnreadCount, (_e, count: number) => whaleWin.setUnreadCount(Number(count) || 0))
+
+  // ---- 鲸鱼形态(悬浮窗压缩态) ----
+
+  ipcMain.handle(IPC.WhaleGetWorkarea, () => whaleWin.currentWorkarea())
+  ipcMain.on(IPC.WhaleSetInteractive, (_e, on: unknown) => whaleWin.setInteractive(Boolean(on)))
+  ipcMain.on(IPC.WhaleReady, () => whaleWin.handleReady())
+  ipcMain.handle(IPC.WhaleExpand, (_e, pose: { x?: unknown; y?: unknown }) => {
+    // 鲸鱼世界坐标(工作区系) → 屏幕锚点:悬浮窗横向居中对准鲸鱼
+    const p = whaleWin.screenFromWorld({ x: Number(pose?.x) || 0, y: Number(pose?.y) || 0 })
+    forms.expandFloat(p)
+    return true
+  })
 
   // ---- 应用级入口 ----
 

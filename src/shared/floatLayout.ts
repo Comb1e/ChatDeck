@@ -1,9 +1,7 @@
 import type { Rect } from './types'
 
-/** 悬浮窗展开态尺寸(DIP) */
+/** 悬浮窗展开态尺寸(DIP);折叠(压缩)形态为独立鲸鱼窗口,不再有药丸尺寸 */
 export const FLOAT_EXPANDED = { width: 360, height: 620 } as const
-/** 悬浮窗折叠态(药丸)尺寸(DIP);高度 64 为 Windows 非可调窗口的系统最小高度 */
-export const FLOAT_PILL = { width: 148, height: 64 } as const
 /** 展开态头部高度:标题行 + 厂商切换条 */
 export const FLOAT_HEADER_H = 84
 /** 展开态底部提示词条高度 */

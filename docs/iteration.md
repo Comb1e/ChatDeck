@@ -1,5 +1,45 @@
 # 迭代记录
 
+## v0.4.0（2026-09-20）
+
+形态升级（用户需求）：把 whale-pet 小鲸鱼桌宠作为悬浮窗的**压缩形态**——鲸鱼完全取代 148×64 药丸。本轮只做合并，不改两个项目各自的功能（仅 4 处经用户确认的集成胶水）。
+
+### 上版问题
+
+- 折叠态（药丸）信息密度低、纯静态：只有一点呼吸动画，白占桌面又无表现力。
+- 用户已有一个成型的鲸鱼桌宠项目（whale-pet，含完整行为状态机/物理/粒子/性能优化与测试），希望复用它作为压缩形态，而不是继续维护药丸。
+
+### 方法（根因）
+
+- **整体策略：渲染层照搬 + 接缝做胶水**。鲸鱼的窗口规格、行为脚本、物理常量、渲染优化全部保留；ChatDeck 只提供宿主（窗口/IPC/形态编排），不改造鲸鱼逻辑。
+- **窗口**：新增 `WhaleWindowController`（`src/main/whaleWindow.ts`），规格与 whale-pet 一致——透明无边框窗口覆盖主显示器工作区、默认鼠标穿透（`setIgnoreMouseEvents(true, {forward:true})`）、渲染层 hitTest 命中鲸鱼/气泡才接管鼠标、渲染层就绪（`whale:ready`）后再显示、33ms 光标轮询（未变化不发送）、`display-metrics-changed` 跟随工作区。透明窗口自愈（resume/unlock/GPU 崩溃 → `heal()`）与悬浮窗同款。
+- **渲染层移植**：`src/renderer/src/whale/` 下 9 个纯 TS 模块（app/states/whale/particles/runtime/tween/fsm/context/badge），逐行移植原 JS（仅有条件类型化与模块化，例如全局对象改显式导入、`window.CFG` 改 `shared/whaleConfig.ts` 类型化配置、App 数据单例拆出 `context.ts` 解循环引用）。新增 `whale.html` 第四渲染入口。
+- **删药丸**：`FloatPill.vue` 及其尺寸常量、`float.resize` 通道、`floatStore.expanded` 状态删除；悬浮窗只有展开态。悬浮窗改为**启动即隐藏创建**（`ensureCreated`），渲染层保持存活以维持站点加载/未读统计/快速展开；ready-to-show 由 `wantVisible` 决定是否自动显形（隐藏创建不闪窗）。
+- **四点胶水**（用户逐条确认，其余行为零改动）：
+  1. 单击鲸鱼 → 展开悬浮窗（原「开心跳」让位）；快速点击判定沿用原输入会话（<350ms、<10px），拖拽/投掷不变。
+  2. 鼠标悬浮鲸鱼 → 触发「开心跳」（悬停上升沿、非按压、非 jumpDive/surface）。
+  3. 头顶未读气泡（药丸红点的等价物）：数据源是悬浮窗渲染层的 `providers.unread`，经新通道 `float:unread-count` 推给主进程转发 `ev:whale-unread`；气泡位置每帧跟随、可点击展开、计入交互接管区。
+  4. 新增 `surface` 行为状态（定点破水浮出）：收起悬浮窗时主进程取窗中心屏幕坐标下发，鲸鱼在原位置浮出——复用招牌动作的入水/浮出编排。
+- **形态编排**（`index.ts`：`expandFloat` / `collapseToWhale` / `toggleForm`）：两窗口互斥显示；展开时把鲸鱼姿态换算成屏幕锚点（水平居中、顶部在鲸鱼上方约 120px，`clampPoint` 夹进工作区）落位悬浮窗；收起时悬浮窗隐藏 + 鲸鱼显示 + surface。入口统一为：鲸鱼单击（`whale:expand`）、头部收起按钮/隐藏按钮（`float:collapse`，隐藏=收起为鲸鱼）、托盘「悬浮窗 ⇄ 鲸鱼」与托盘左键、二次启动（唤起鲸鱼）。
+- **托盘**：新增「鲸鱼招牌动作（起跳下潜）」（仅鲸鱼可见时下发）。
+- **测试工程**：新增 `tsconfig.test.json`（DOM + node 类型），把 `tests/**` 从无 DOM 的 `tsconfig.node.json` 移出——鲸鱼渲染层被测试引用后原配置无法通过类型检查；`typecheck` 脚本追加第三段。
+
+### 验证结果
+
+- 移植保真：whale-pet 的 `runtime.test.js` / `animation.test.js` 全量移植到 vitest（`tests/whaleRuntime.test.ts` 18 例 + `tests/whaleStates.test.ts` 8 例），用独立对照与边界用例校验。移植期抓到 2 个抄写缺陷并修正：`DampedSpring` 欠阻尼速度公式（`s` 位置错）与我移植的 RK4 对照第四阶段位置项（`v + b·dt` 应为 `v + b·dt/2`）——前者被后者放大暴露，比对原版后双向确认。修正后 **127/127 通过**。
+- `npm run typecheck`：node/web/test 三工程全通过。
+- dev 冒烟（临时钩子，验证后已删，grep 临时=0）：启动即鲸鱼可见 + 悬浮窗隐藏；钩子展开 → 悬浮窗按鲸鱼位置落位（实测 x=588,y=932）且鲸鱼隐藏；**用户手动切换**回鲸鱼成功；钩子收起 → 鲸鱼保持可见（幂等）。鲸鱼渲染层 `[whale] booted` 日志正常，无报错。
+- 打包：v0.4.0 双包 68.1/68.3MB（与 0.3.7 持平：仅多一个渲染入口，组件本体共用）；asar 四入口齐全（whale/float/settings/translate.html + whale JS/CSS 资产）；打包版启动冒烟通过——EnumWindows 显示「ChatDeck 鲸鱼」可见、「ChatDeck 悬浮窗」隐藏，正是设计的启动形态。
+
+### 遗留问题
+
+- 鲸鱼窗口覆盖整个工作区且置顶（鼠标穿透），沿用 whale-pet 的单主显示器策略：鲸鱼只在主显示器游动，不外溢到副屏。
+- 悬浮窗隐藏创建后，站点视图在「鲸鱼形态」下按休眠策略被销毁（与旧版隐藏悬浮窗行为一致），久留鲸鱼形态后展开会重新加载站点页面。
+- 未读气泡在鲸鱼潜水（jumpDive 水下段/窗口重建间隙）期间不显示，浮出后恢复。
+- 悬停触发开心跳是每帧 hitTest 的上升沿：鲸鱼游到静止光标下方时也会触发（用户明确要求的语义），若嫌频繁可在后续版本加冷却时间。
+- v0.3.7 遗留照旧：portable exe 移动后自启路径失效需重开关一次；开机瞬间网络未就绪可能落错误页。
+- v0.3.6 遗留照旧：粘贴目标只认悬浮窗活动站点、360 窄面板移动端 UA 策略；v0.3.5 及更早遗留照旧。
+
 ## v0.3.7（2026-09-20）
 
 新功能：开机自启（用户需求）。

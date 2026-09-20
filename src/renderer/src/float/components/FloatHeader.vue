@@ -13,8 +13,8 @@ function initial(name: string): string {
   return name.trim().charAt(0).toUpperCase() || '?'
 }
 
-function hide(): void {
-  void window.api.float.hide()
+function collapse(): void {
+  float.collapse()
 }
 
 function openSettings(): void {
@@ -35,12 +35,12 @@ function openSettings(): void {
           <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" />
         </svg>
       </button>
-      <button class="wbtn" title="收起为悬浮药丸" @click="float.toggleExpanded()">
+      <button class="wbtn" title="收起为鲸鱼" @click="collapse()">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4">
           <path d="M9 3h4v4M7 13H3V9M13 3l-5 5M3 13l5-5" />
         </svg>
       </button>
-      <button class="wbtn" title="隐藏悬浮窗" @click="hide()">
+      <button class="wbtn" title="收起为鲸鱼" @click="collapse()">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4">
           <path d="M4 4l8 8M12 4l-8 8" />
         </svg>

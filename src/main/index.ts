@@ -2,10 +2,12 @@ import { app, Menu, globalShortcut, powerMonitor, screen } from 'electron'
 import { IPC } from '@shared/ipc'
 import { formatDirection, resolveDirection } from '@shared/translate'
 import type { TranslatePopupState } from '@shared/translate'
+import { FLOAT_EXPANDED } from '@shared/floatLayout'
 import { ProviderStore } from './store/providerStore'
 import { PromptStore } from './store/promptStore'
 import { MOBILE_UA, ViewManager } from './viewManager'
 import { FloatWindowController } from './floatWindow'
+import { WhaleWindowController } from './whaleWindow'
 import { SettingsWindowController } from './settingsWindow'
 import { TrayController } from './tray'
 import { registerIpc } from './ipc'
@@ -17,7 +19,7 @@ const stores = {
   providers: new ProviderStore(),
   prompts: new PromptStore()
 }
-// ChatDeck 以「悬浮窗 + 托盘」形态运行,悬浮窗是站点视图的唯一宿主
+// ChatDeck 以「悬浮窗(压缩形态=鲸鱼) + 托盘」形态运行,悬浮窗是站点视图的唯一宿主
 const floatViews = new ViewManager(MOBILE_UA)
 const translate = new TranslateService()
 // 译文弹窗依附悬浮窗(正上方),纯跟随不持久化位置
@@ -32,16 +34,46 @@ const floatWin = new FloatWindowController({
   // 重建窗口前把站点视图从旧窗口摘下(留在缓存),随新窗口 boot 后的 setLayout 重新挂载
   onDetachViews: () => floatViews.setLayout([])
 })
+const whaleWin = new WhaleWindowController()
 const settingsWin = new SettingsWindowController()
 let tray: TrayController | null = null
+
+/** 展开悬浮窗(可带屏幕锚点);鲸鱼随之隐藏(压缩形态 ⇄ 展开形态互斥) */
+function expandFloat(at?: { x: number; y: number }): void {
+  if (at) {
+    floatWin.showAt({
+      x: at.x - FLOAT_EXPANDED.width / 2,
+      y: at.y - 120
+    })
+  } else {
+    floatWin.show()
+  }
+  whaleWin.hide()
+}
+
+/** 收起悬浮窗为鲸鱼形态;鲸鱼在悬浮窗原位置(中心点)破水浮出 */
+function collapseToWhale(): void {
+  const win = floatWin.getWindow()
+  const bounds = win && floatWin.isVisible() ? win.getBounds() : null
+  floatWin.hide()
+  whaleWin.show()
+  if (bounds) {
+    whaleWin.sendSurfaceAt({ x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 })
+  }
+}
+
+function toggleForm(): void {
+  if (floatWin.isVisible()) collapseToWhale()
+  else expandFloat()
+}
 
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
 } else {
-  // 二次启动:唤起悬浮窗(应用无常驻主窗)
+  // 二次启动:唤起压缩形态(鲸鱼)
   app.on('second-instance', () => {
-    floatWin.show()
+    whaleWin.show()
   })
 
   void app.whenReady().then(bootstrap)
@@ -64,8 +96,10 @@ async function bootstrap(): Promise<void> {
 
   tray = new TrayController({
     openSettings: () => settingsWin.show(),
-    toggleFloat: () => {
-      floatWin.toggle()
+    toggleForm: toggleForm,
+    jumpDive: () => {
+      // 招牌动作只在鲸鱼可见时有意义(隐藏时动画无人看)
+      if (whaleWin.isVisible()) whaleWin.sendJumpDive()
     },
     quit: () => {
       app.quit()
@@ -73,25 +107,51 @@ async function bootstrap(): Promise<void> {
   })
   tray.create()
 
-  registerIpc({ ...stores, floatViews, floatWin, settingsWin, translate, translateWin })
+  registerIpc({
+    ...stores,
+    floatViews,
+    floatWin,
+    whaleWin,
+    settingsWin,
+    translate,
+    translateWin,
+    forms: { collapseToWhale, expandFloat, toggleForm }
+  })
   registerTranslateHotkey()
 
-  // 默认显示悬浮窗(按持久化的位置与展开态)
-  floatWin.show()
+  // 默认以压缩形态(鲸鱼)显示悬浮窗;悬浮窗窗口以隐藏方式创建,
+  // 其渲染层保持存活:站点视图加载、未读统计、快速展开都依赖它
+  floatWin.ensureCreated()
+  whaleWin.show()
 
   // 后台站点休眠扫描:每分钟检查一次,超过站点休眠阈值未显示的站点视图销毁释放内存
   setInterval(() => floatViews.sweepSleep(), 60_000)
 
-  // 透明悬浮窗自愈:锁屏/休眠唤醒/显卡驱动重置后 DWM 合成表面可能失效(整窗透明"消失",
+  // 透明窗口自愈:锁屏/休眠唤醒/显卡驱动重置后 DWM 合成表面可能失效(整窗透明"消失",
   // isVisible 仍为 true 导致托盘第一击 toggle 反而执行隐藏),在这些事件后强制恢复;
   // 显示器拓扑变化(断开/分辨率变更)则把窗口夹回现存工作区。
-  powerMonitor.on('resume', () => floatWin.heal())
-  powerMonitor.on('unlock-screen', () => floatWin.heal())
-  app.on('child-process-gone', (_e, details) => {
-    if (details.type === 'GPU') floatWin.heal()
+  powerMonitor.on('resume', () => {
+    floatWin.heal()
+    whaleWin.heal()
   })
-  screen.on('display-removed', () => floatWin.reclamp())
-  screen.on('display-metrics-changed', () => floatWin.reclamp())
+  powerMonitor.on('unlock-screen', () => {
+    floatWin.heal()
+    whaleWin.heal()
+  })
+  app.on('child-process-gone', (_e, details) => {
+    if (details.type === 'GPU') {
+      floatWin.heal()
+      whaleWin.heal()
+    }
+  })
+  screen.on('display-removed', () => {
+    floatWin.reclamp()
+    whaleWin.syncWorkarea()
+  })
+  screen.on('display-metrics-changed', () => {
+    floatWin.reclamp()
+    whaleWin.syncWorkarea()
+  })
 }
 
 // 托盘常驻应用:窗口全部关闭(悬浮窗重建间隙等)也不退出,退出只走托盘「退出」
@@ -142,5 +202,6 @@ async function handleTranslateHotkey(): Promise<void> {
 app.on('before-quit', () => {
   globalShortcut.unregisterAll()
   floatViews.destroyAll()
+  whaleWin.destroy()
   tray?.destroy()
 })

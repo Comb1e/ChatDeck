@@ -1,6 +1,6 @@
 {
   "name": "chatdeck",
-  "version": "0.3.7",
+  "version": "0.4.0",
   "description": "ChatDeck — 国内大模型聚合工作台",
   "main": "./out/main/index.js",
   "author": "CYK",
@@ -9,7 +9,7 @@
     "dev": "electron-vite dev --watch",
     "build": "electron-vite build",
     "start": "electron-vite preview",
-    "typecheck": "vue-tsc --noEmit -p tsconfig.node.json && vue-tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.node.json && vue-tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "icon": "node scripts/make-icon.mjs",

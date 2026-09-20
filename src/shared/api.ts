@@ -4,9 +4,20 @@ import type {
   PromptInput,
   Provider,
   ProviderInput,
+  Rect,
   ViewLoadState
 } from './types'
 import type { TranslateConfig, TranslatePairId, TranslatePopupState } from './translate'
+
+/** 主进程 → 鲸鱼渲染层的行为命令 */
+export type WhaleCommand = { type: 'jump-dive' } | { type: 'surface'; x: number; y: number }
+
+/** 鲸鱼渲染层光标采样(屏幕坐标 + 时间戳,与渲染层 performance 时钟同源) */
+export interface WhaleCursorPoint {
+  x: number
+  y: number
+  at: number
+}
 
 /** 渲染层可用的宿主 API（preload 经 contextBridge 暴露，结构以本接口为准） */
 export interface DeckApi {
@@ -34,14 +45,26 @@ export interface DeckApi {
   }
   /** 悬浮窗窗口控制 */
   float: {
-    /** 托盘等外部入口唤起/收起悬浮窗 */
+    /** 托盘等外部入口:展开悬浮窗 / 收起为鲸鱼(形态切换) */
     toggle(): Promise<boolean>
-    /** 悬浮窗内部:展开/折叠 */
-    resize(expanded: boolean): Promise<boolean>
-    /** 悬浮窗自身隐藏 */
+    /** 悬浮窗内部:收起为鲸鱼形态 */
+    collapse(): Promise<boolean>
+    /** 悬浮窗隐藏(等价于收起为鲸鱼) */
     hide(): Promise<boolean>
     getState(): Promise<FloatWindowState>
     setActiveProvider(id: string): void
+    /** 未读站点数变化推送(鲸鱼头顶气泡) */
+    pushUnread(count: number): void
+  }
+  /** 鲸鱼形态(悬浮窗压缩态) */
+  whale: {
+    /** 渲染层初始化完成,可以显示窗口 */
+    ready(): void
+    getWorkarea(): Promise<Rect>
+    /** 悬浮在鲸鱼/气泡上时开启窗口交互,离开后恢复鼠标穿透 */
+    setInteractive(on: boolean): void
+    /** 单击鲸鱼:携带世界姿态展开悬浮窗 */
+    expand(pose: { x: number; y: number }): Promise<boolean>
   }
   /** 应用级入口 */
   app: {
@@ -76,11 +99,17 @@ export interface DeckApi {
     activeChanged(cb: (e: { id: string }) => void): void
     loadStateChanged(cb: (e: { id: string; state: ViewLoadState }) => void): void
   }
+  /** 主进程 → 鲸鱼渲染层事件 */
+  onWhale: {
+    cursor(cb: (p: WhaleCursorPoint) => void): void
+    workarea(cb: (wa: Rect) => void): void
+    command(cb: (cmd: WhaleCommand) => void): void
+    unread(cb: (count: number) => void): void
+  }
 }
 
 /** 悬浮窗持久化状态(float-state.json)暴露给渲染层的部分 */
 export interface FloatWindowState {
-  expanded: boolean
   activeProviderId: string | null
 }
 

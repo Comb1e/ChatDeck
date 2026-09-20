@@ -1,17 +1,16 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, screen } from 'electron'
-import { clampDragBounds, clampPoint, FLOAT_EXPANDED, FLOAT_PILL } from '@shared/floatLayout'
+import { clampDragBounds, clampPoint, FLOAT_EXPANDED } from '@shared/floatLayout'
 import type { FloatWindowState } from '@shared/api'
 import { JsonStore } from './store/jsonStore'
 
 interface PersistedFloatState {
   x: number | null
   y: number | null
-  expanded: boolean
   activeProviderId: string | null
 }
 
-const EMPTY: PersistedFloatState = { x: null, y: null, expanded: true, activeProviderId: null }
+const EMPTY: PersistedFloatState = { x: null, y: null, activeProviderId: null }
 
 /** 渲染进程崩溃后自动重建窗口的最小间隔,防止崩溃循环拖垮整机 */
 const RECREATE_GUARD_MS = 10_000
@@ -28,27 +27,29 @@ export interface FloatWindowDeps {
 }
 
 /**
- * 悬浮窗窗口控制器:无边框透明置顶小窗,展开 ⇄ 折叠(药丸)。
- * 位置与展开态持久化到 float-state.json(独立文件,避免与 ui-state.json 相互覆盖)。
- * 窗口首次唤起时惰性创建,之后常驻(隐藏不销毁),视图缓存随之保留。
+ * 悬浮窗窗口控制器:无边框透明置顶小窗(360×620)。
+ * 收起(压缩)形态由独立的鲸鱼窗口承担,本窗口只在展开时可见。
+ * 位置持久化到 float-state.json(独立文件,避免与 ui-state.json 相互覆盖)。
+ * 窗口常驻(隐藏不销毁),视图缓存随之保留;启动时以隐藏方式创建,保证
+ * 站点视图加载与未读统计在鲸鱼形态下照常工作。
  */
 export class FloatWindowController {
   private store = new JsonStore<PersistedFloatState>('float-state.json', EMPTY)
   private win: BrowserWindow | null = null
-  private expanded = true
   private activeProviderId: string | null = null
   private savedX: number | null = null
   private savedY: number | null = null
   private moveTimer: ReturnType<typeof setTimeout> | null = null
   private writeQueue: Promise<void> = Promise.resolve()
   private lastRecreateAt = 0
+  /** 期望窗口可见(ready-to-show 时据此决定是否自动显示,隐藏创建不闪窗) */
+  private wantVisible = false
 
   constructor(private readonly deps: FloatWindowDeps = {}) {}
 
   /** 启动时读取持久化状态(窗口本身惰性创建) */
   async restore(): Promise<void> {
     const s = await this.store.load()
-    this.expanded = s.expanded !== false
     this.activeProviderId = typeof s.activeProviderId === 'string' ? s.activeProviderId : null
     this.savedX = Number.isFinite(s.x) ? s.x : null
     this.savedY = Number.isFinite(s.y) ? s.y : null
@@ -63,21 +64,8 @@ export class FloatWindowController {
     return !!win && win.isVisible()
   }
 
-  getExpanded(): boolean {
-    return this.expanded
-  }
-
-  /** 托盘等外部入口:显示或隐藏悬浮窗 */
-  toggle(): boolean {
-    if (this.isVisible()) {
-      this.hide()
-      return false
-    }
-    this.show()
-    return true
-  }
-
   show(): void {
+    this.wantVisible = true
     const win = this.getWindow()
     if (win && win.webContents.isCrashed()) {
       // 页面已崩溃(表现为白屏/透明),直接换新窗口
@@ -85,17 +73,42 @@ export class FloatWindowController {
       return
     }
     const target = win ?? this.create()
-    // Windows 上锁屏/全屏应用/驱动重置后 'floating' 置顶级别可能丢失,显示时重新断言
-    target.setAlwaysOnTop(true, 'floating')
-    target.show()
-    target.focus()
-    // 透明窗口久跑后 DWM 合成表面可能失效(整窗透明"消失"),强制重绘一次
-    target.webContents.invalidate()
+    if (!target.isVisible()) {
+      // Windows 上锁屏/全屏应用/驱动重置后 'floating' 置顶级别可能丢失,显示时重新断言
+      target.setAlwaysOnTop(true, 'floating')
+      target.show()
+      target.focus()
+      // 透明窗口久跑后 DWM 合成表面可能失效(整窗透明"消失"),强制重绘一次
+      target.webContents.invalidate()
+    }
   }
 
   hide(): void {
+    this.wantVisible = false
     this.getWindow()?.hide()
     this.deps.onHide?.()
+  }
+
+  /** 启动时以隐藏方式创建窗口(渲染层保持存活:站点加载/未读统计/快速展开) */
+  ensureCreated(): void {
+    if (!this.getWindow()) this.create()
+  }
+
+  /** 在指定屏幕位置(如鲸鱼当前位置附近)显示悬浮窗 */
+  showAt(point: { x: number; y: number }): void {
+    const win = this.getWindow() ?? this.create()
+    const b = win.getBounds()
+    const area = screen.getDisplayMatching({ x: point.x, y: point.y, width: b.width, height: b.height })
+      .workArea
+    const p = clampPoint(point.x, point.y, b.width, b.height, area)
+    if (p.x !== b.x || p.y !== b.y) {
+      win.setBounds({ x: p.x, y: p.y, width: b.width, height: b.height })
+      this.savedX = p.x
+      this.savedY = p.y
+      this.deps.onMoved?.()
+      void this.persist()
+    }
+    this.show()
   }
 
   /**
@@ -128,28 +141,8 @@ export class FloatWindowController {
     }
   }
 
-  /** 展开 ⇄ 折叠:窗口尺寸切换,保持左上角并夹在屏幕工作区内 */
-  async setExpanded(expanded: boolean): Promise<void> {
-    this.expanded = expanded
-    const win = this.getWindow() ?? this.create()
-    const size = expanded ? FLOAT_EXPANDED : FLOAT_PILL
-    const bounds = win.getBounds()
-    const area = screen.getDisplayMatching({
-      x: bounds.x,
-      y: bounds.y,
-      width: size.width,
-      height: size.height
-    }).workArea
-    const point = clampPoint(bounds.x, bounds.y, size.width, size.height, area)
-    win.setBounds({ x: point.x, y: point.y, width: size.width, height: size.height })
-    this.savedX = point.x
-    this.savedY = point.y
-    this.deps.onMoved?.()
-    await this.persist()
-  }
-
   getState(): FloatWindowState {
-    return { expanded: this.expanded, activeProviderId: this.activeProviderId }
+    return { activeProviderId: this.activeProviderId }
   }
 
   setActiveProvider(id: string): void {
@@ -187,7 +180,7 @@ export class FloatWindowController {
   }
 
   private create(): BrowserWindow {
-    const size = this.expanded ? FLOAT_EXPANDED : FLOAT_PILL
+    const size = FLOAT_EXPANDED
     const point = this.initialPoint(size.width, size.height)
     const win = new BrowserWindow({
       ...size,
@@ -228,8 +221,11 @@ export class FloatWindowController {
         win.setBounds({ x: point.x, y: point.y, width: newBounds.width, height: newBounds.height })
       }
     })
-    // ready-to-show 后再显示,避免透明窗口在 Windows 上闪黑底
-    win.on('ready-to-show', () => win.show())
+    // ready-to-show 后再显示,避免透明窗口在 Windows 上闪黑底;
+    // 隐藏创建(ensureCreated)不自动显形,由 show() 的 wantVisible 驱动
+    win.on('ready-to-show', () => {
+      if (this.wantVisible) win.show()
+    })
     win.on('move', () => this.schedulePositionSave())
     win.on('closed', () => {
       this.win = null
@@ -302,7 +298,6 @@ export class FloatWindowController {
         this.store.save({
           x: this.savedX,
           y: this.savedY,
-          expanded: this.expanded,
           activeProviderId: this.activeProviderId
         })
       )

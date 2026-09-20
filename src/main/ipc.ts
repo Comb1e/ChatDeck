@@ -1,4 +1,4 @@
-import { clipboard, ipcMain } from 'electron'
+import { app, clipboard, ipcMain } from 'electron'
 import { IPC } from '@shared/ipc'
 import type { PaneLayoutEntry, Provider, ProviderInput, PromptInput } from '@shared/types'
 import type { ProviderStore } from './store/providerStore'
@@ -111,6 +111,15 @@ export function registerIpc(deps: IpcDeps): void {
   ipcMain.handle(IPC.AppOpenSettings, () => {
     settingsWin.show()
     return true
+  })
+
+  ipcMain.handle(IPC.AppGetAutostart, () => app.getLoginItemSettings().openAtLogin)
+
+  ipcMain.handle(IPC.AppSetAutostart, (_e, enabled: boolean) => {
+    // Windows 写 HKCU\Software\Microsoft\Windows\CurrentVersion\Run,值指向当前 exe
+    //(portable exe 移动位置后需重新开关一次以刷新路径);注册表读写偶发失败,以回读为准
+    app.setLoginItemSettings({ openAtLogin: Boolean(enabled) })
+    return app.getLoginItemSettings().openAtLogin
   })
 
   ipcMain.handle(IPC.ClipboardWrite, (_e, text: string) => {

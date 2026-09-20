@@ -47,6 +47,10 @@ export interface DeckApi {
   app: {
     /** 打开设置窗口(悬浮窗齿轮/托盘共用同一窗口,已开则聚焦) */
     openSettings(): Promise<boolean>
+    /** 开机自启当前状态(读注册表 Run 项) */
+    getAutostart(): Promise<boolean>
+    /** 设置/取消开机自启;返回生效后的真实状态 */
+    setAutostart(enabled: boolean): Promise<boolean>
   }
   clipboard: {
     writeText(text: string): Promise<boolean>

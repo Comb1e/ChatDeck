@@ -28,6 +28,9 @@ export const IPC = {
 
   // 设置窗口
   AppOpenSettings: 'app:open-settings',
+  // 开机自启(Windows 写 HKCU\...\CurrentVersion\Run,经 app.setLoginItemSettings)
+  AppGetAutostart: 'app:get-autostart',
+  AppSetAutostart: 'app:set-autostart',
 
   ClipboardWrite: 'clipboard:write',
 

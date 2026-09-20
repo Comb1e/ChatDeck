@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
 import type { Provider, ViewLoadState } from '@shared/types'
-import { useLayoutStore } from './layout'
 
 interface ProvidersState {
   items: Provider[]
@@ -8,6 +7,7 @@ interface ProvidersState {
   unread: string[]
 }
 
+/** 站点列表与加载状态(桌面版与悬浮窗共用,不耦合任何布局逻辑) */
 export const useProvidersStore = defineStore('providers', {
   state: (): ProvidersState => ({
     items: [],
@@ -27,16 +27,11 @@ export const useProvidersStore = defineStore('providers', {
   actions: {
     async load(): Promise<void> {
       this.items = await window.api.providers.list()
-      const layout = useLayoutStore()
-      layout.prunePanes()
     },
 
-    onTitleChanged(id: string, title: string): void {
-      if (!title) return
-      const layout = useLayoutStore()
-      if (layout.activeId !== id) {
-        if (!this.unread.includes(id)) this.unread.push(id)
-      }
+    onTitleChanged(id: string, title: string, isActive: boolean): void {
+      if (!title || isActive) return
+      if (!this.unread.includes(id)) this.unread.push(id)
     },
 
     onLoadStateChanged(id: string, state: ViewLoadState): void {

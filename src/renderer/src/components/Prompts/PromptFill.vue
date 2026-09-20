@@ -2,10 +2,8 @@
 import { computed, reactive } from 'vue'
 import { extractPlaceholders, renderContent } from '@shared/prompts'
 import { useUiStore } from '../../stores/ui'
-import { useLayoutStore } from '../../stores/layout'
 
 const ui = useUiStore()
-const layout = useLayoutStore()
 
 const target = ui.fill
 const fields = reactive<Record<string, string>>({})
@@ -27,14 +25,13 @@ async function finish(): Promise<void> {
     const text = renderContent(target.prompt.content, fields)
     await window.api.clipboard.writeText(text)
     if (target.pasteAfter) {
-      const id = layout.activeId
-      if (!id) {
+      // 粘贴目标 = 悬浮窗当前活动站点(主进程解析)
+      const ok = await window.api.fview.paste()
+      if (!ok) {
         ui.showToast('当前没有活动站点')
         return
       }
-      ui.close()
-      window.api.view.paste(id)
-      ui.showToast('已复制，正在粘贴到当前站点（若无效请手动 Ctrl+V）')
+      ui.showToast('已复制，正在粘贴到活动站点（若无效请手动 Ctrl+V）')
     } else {
       ui.showToast('已复制到剪贴板')
     }

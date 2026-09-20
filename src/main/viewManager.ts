@@ -1,7 +1,8 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, session, shell, WebContentsView } from 'electron'
+import { effectiveAutoSleepMinutes } from '@shared/types'
 import type { PaneLayoutEntry, Provider, ViewLoadState } from '@shared/types'
-import { canReload, viewTransition, type ViewEvent, type ViewState } from '@shared/viewState'
+import { canReload, shouldSleepNow, viewTransition, type ViewEvent, type ViewState } from '@shared/viewState'
 
 interface ManagedView {
   provider: Provider
@@ -9,6 +10,10 @@ interface ManagedView {
   state: ViewState
   /** 面向渲染层的粗粒度状态 */
   reported: ViewLoadState
+  /** 最近一次确认可见的时刻；休眠扫描据此计算后台时长 */
+  lastVisibleAt: number
+  /** 是否以非零矩形挂载在宿主窗口上（零矩形=悬浮窗折叠时的隐藏挂载） */
+  mountedNonzero: boolean
 }
 
 export interface ViewManagerHooks {
@@ -18,20 +23,31 @@ export interface ViewManagerHooks {
 }
 
 const DEFAULT_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`
+/** 窄窗口场景(悬浮窗)的移动端 UA:站点给出适配小屏的布局 */
+export const MOBILE_UA = `Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Mobile Safari/537.36`
 
 /**
  * 站点视图管理器：每个厂商一个 WebContentsView，独立 persist partition。
  * 生命周期状态转移全部经由 @shared/viewState 的纯状态机，避免隐式状态散落。
+ * 同名 partition 即同一 session——桌面版与悬浮窗各持一个实例即可共享登录态。
  */
 export class ViewManager {
   private views = new Map<string, ManagedView>()
   private win: BrowserWindow | null = null
   private activeId: string | null = null
+  /** 最近一次 setLayout 的布局快照,窗口重新显示时用于重建被休眠销毁的视图 */
+  private lastLayout: PaneLayoutEntry[] | null = null
   private hooks: ViewManagerHooks = {
     onTitleChanged: () => {},
     onActiveChanged: () => {},
     onLoadStateChanged: () => {}
   }
+
+  /**
+   * @param viewUserAgent 视图级 UA 覆盖(如悬浮窗的移动端 UA)。
+   *   只作用于本管理器创建的 webContents,不写 session,避免影响其他窗口的同分区视图。
+   */
+  constructor(private readonly viewUserAgent?: string) {}
 
   hook(hooks: ViewManagerHooks): void {
     this.hooks = hooks
@@ -43,11 +59,15 @@ export class ViewManager {
 
   attachWindow(win: BrowserWindow): void {
     this.win = win
+    // 窗口隐藏期间后台视图可能已被休眠销毁,重新显示时按最近一次布局重建缺失的视图
+    win.on('show', () => this.remount())
+    win.on('restore', () => this.remount())
   }
 
   /** 应用布局：出现在 entries 中的视图被挂载并定位，其余从窗口移除（保留缓存） */
   setLayout(entries: PaneLayoutEntry[]): void {
     if (!this.win) return
+    this.lastLayout = entries
     // 渲染层页面坐标即 contentView 子视图坐标（二者同以内容区为原点），直接使用
     const wanted = new Set<string>()
     for (const entry of entries) {
@@ -58,10 +78,13 @@ export class ViewManager {
       if (mv.state === 'idle') this.dispatch(mv, { type: 'attach' })
       this.win.contentView.addChildView(mv.view)
       mv.view.setBounds(entry.rect)
+      mv.mountedNonzero = entry.rect.width > 0 && entry.rect.height > 0
+      if (mv.mountedNonzero) mv.lastVisibleAt = Date.now()
     }
     for (const [id, mv] of this.views) {
       if (!wanted.has(id)) {
         this.win.contentView.removeChildView(mv.view)
+        mv.mountedNonzero = false
         this.dispatch(mv, { type: 'detach' })
       }
     }
@@ -130,24 +153,60 @@ export class ViewManager {
     }, 60)
   }
 
-  /** 清除站点登录数据并销毁其视图 */
+  /** 清除站点登录数据并销毁其视图（分区存储由 ProviderStore.clearData 统一清理） */
   async clearData(id: string): Promise<void> {
-    const mv = this.views.get(id)
-    if (mv) {
-      this.win?.contentView.removeChildView(mv.view)
-      // detached 销毁，避免并发销毁告警
-      setTimeout(() => {
-        try {
-          mv.view.webContents.close()
-        } catch {
-          /* already closed */
-        }
-      }, 100)
-      this.views.delete(id)
+    this.discardView(id)
+  }
+
+  /** 删除站点：销毁视图并忘记注册信息（分区存储由 ipc 层调 ProviderStore.clearData） */
+  discardProvider(id: string): void {
+    this.discardView(id, true)
+  }
+
+  /**
+   * 后台休眠扫描：可见视图刷新时间戳；不可见超过该站点休眠阈值的视图直接销毁
+   * （渲染进程退出释放内存），切回时由 ensureView 重建，登录态保留在 persist 分区。
+   */
+  sweepSleep(now = Date.now()): void {
+    for (const [id, mv] of this.views) {
+      const provider = this.providers.get(id) ?? mv.provider
+      const visible =
+        mv.mountedNonzero &&
+        this.win !== null &&
+        !this.win.isDestroyed() &&
+        this.win.isVisible() &&
+        !this.win.isMinimized()
+      if (visible) {
+        mv.lastVisibleAt = now
+        continue
+      }
+      if (shouldSleepNow(visible, mv.lastVisibleAt, now, effectiveAutoSleepMinutes(provider) * 60_000)) {
+        this.discardView(id)
+      }
     }
-    const ses = session.fromPartition(`persist:provider-${id}`)
-    await ses.clearStorageData()
-    await ses.clearCache()
+  }
+
+  /** 从窗口摘除并销毁视图；延迟 close 避免并发销毁告警 */
+  private discardView(id: string, forgetProvider = false): void {
+    const mv = this.views.get(id)
+    if (!mv) return
+    this.views.delete(id)
+    if (forgetProvider) this.providers.delete(id)
+    this.win?.contentView.removeChildView(mv.view)
+    setTimeout(() => {
+      try {
+        mv.view.webContents.close()
+      } catch {
+        /* already closed */
+      }
+    }, 100)
+    mv.reported = 'sleeping'
+    this.hooks.onLoadStateChanged(id, mv.reported)
+  }
+
+  /** 窗口重新显示：按最近一次布局重建被休眠销毁的视图（幂等，仍在缓存的视图原样复用） */
+  private remount(): void {
+    if (this.lastLayout) this.setLayout(this.lastLayout)
   }
 
   destroyAll(): void {
@@ -194,12 +253,25 @@ export class ViewManager {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
+        // 站点输入校验由站点自身负责;关掉 Chromium 拼写检查省词典加载与内存
+        spellcheck: false,
         preload: this.errorPreloadPath()
       }
     })
     view.setBackgroundColor('#FFFFFF')
+    // 厂商显式配置的 UA 优先;否则应用管理器级覆盖(悬浮窗移动端 UA)
+    if (this.viewUserAgent && !provider.userAgent) {
+      view.webContents.setUserAgent(this.viewUserAgent)
+    }
 
-    const mv: ManagedView = { provider, view, state: 'idle', reported: 'loading' }
+    const mv: ManagedView = {
+      provider,
+      view,
+      state: 'idle',
+      reported: 'loading',
+      lastVisibleAt: Date.now(),
+      mountedNonzero: false
+    }
     this.views.set(provider.id, mv)
 
     const wc = view.webContents
@@ -226,6 +298,8 @@ export class ViewManager {
       })
     })
     wc.on('render-process-gone', () => {
+      // 视图已休眠/删除移出缓存时不上报（销毁瞬间可能触发本事件）
+      if (this.views.get(provider.id) !== mv) return
       this.dispatch(mv, { type: 'crash' })
       mv.reported = 'crashed'
       this.hooks.onLoadStateChanged(provider.id, mv.reported)

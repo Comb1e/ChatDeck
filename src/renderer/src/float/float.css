@@ -1,0 +1,13 @@
+/* 悬浮窗专用:透明窗口根 + 暗色滚动条(组件内玻璃样式见各 .vue scoped) */
+
+body {
+  background: transparent;
+  color: var(--glass-text);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+}

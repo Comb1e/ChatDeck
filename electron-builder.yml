@@ -1,0 +1,48 @@
+# electron-builder 打包配置(npm run dist)
+# 产物: dist/ChatDeck-<ver>-Portable.exe(免安装双击即用)+ dist/ChatDeck-Setup-<ver>.exe(一键安装器)
+appId: com.chatdeck.app
+productName: ChatDeck
+copyright: Copyright © 2026 CYK
+
+directories:
+  output: dist
+
+# 应用本体:electron-vite 构建产物(main/preload/renderer)+ package.json(自动包含)
+files:
+  - out/**
+
+# 最高 LZMA 压缩(portable 7z 与 NSIS 共用),构建稍慢但产物更小
+compression: maximum
+
+# 打包后裁剪 Chromium 语言包(压缩归档前生效,portable/NSIS 同步受益)
+afterPack: build/afterPack.js
+
+# 内置默认配置与错误页平铺拷到安装目录 resources/ 根层,
+# 与 src/main/store/jsonStore.ts resourceFile() 的 process.resourcesPath 读取路径对应
+# (注意 to 必须是 "."——写成 "resources" 会多套一层目录导致读不到)
+extraResources:
+  - from: resources
+    to: .
+
+# 国内镜像:Electron 发行包与构建工具二进制(nsis/winCodeSign 等)
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+
+nsis:
+  oneClick: true # 一键安装,无需交互
+  perMachine: false # 装到 %LOCALAPPDATA%\Programs\ChatDeck,无需管理员
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: ChatDeck
+  artifactName: ChatDeck-Setup-${version}.${ext}
+
+portable:
+  artifactName: ChatDeck-${version}-Portable.${ext}

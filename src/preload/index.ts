@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '@shared/ipc'
 import type { DeckApi } from '@shared/api'
-import type { PaneLayoutEntry, PromptInput, ProviderInput, UiState } from '@shared/types'
+import type { PaneLayoutEntry, PromptInput, ProviderInput } from '@shared/types'
+import type { TranslateConfig, TranslatePairId, TranslatePopupState } from '@shared/translate'
 
 /**
  * 渲染层唯一可用的宿主 API。所有方法返回 Promise（send 型也包装为 Promise 以便统一风格）。
@@ -20,31 +21,49 @@ const api: DeckApi = {
     remove: (id: string) => ipcRenderer.invoke(IPC.PromptsRemove, id),
     reset: () => ipcRenderer.invoke(IPC.PromptsReset)
   },
-  state: {
-    get: () => ipcRenderer.invoke(IPC.StateGet),
-    save: (s: UiState) => ipcRenderer.invoke(IPC.StateSave, s)
+  fview: {
+    setLayout: (entries: PaneLayoutEntry[]) => ipcRenderer.invoke(IPC.FViewSetLayout, entries),
+    setActive: (id: string): void => ipcRenderer.send(IPC.FViewSetActive, id),
+    reload: (id: string): void => ipcRenderer.send(IPC.FViewReload, id),
+    back: (id: string): void => ipcRenderer.send(IPC.FViewBack, id),
+    forward: (id: string): void => ipcRenderer.send(IPC.FViewForward, id),
+    paste: () => ipcRenderer.invoke(IPC.FViewPaste) as Promise<boolean>
   },
-  view: {
-    setLayout: (entries: PaneLayoutEntry[]) => ipcRenderer.invoke(IPC.ViewSetLayout, entries),
-    setActive: (id: string): void => ipcRenderer.send(IPC.ViewSetActive, id),
-    reload: (id: string): void => ipcRenderer.send(IPC.ViewReload, id),
-    back: (id: string): void => ipcRenderer.send(IPC.ViewBack, id),
-    forward: (id: string): void => ipcRenderer.send(IPC.ViewForward, id),
-    openExternal: (id: string): void => ipcRenderer.send(IPC.ViewOpenExternal, id),
-    paste: (id: string): void => ipcRenderer.send(IPC.ViewPaste, id)
+  float: {
+    toggle: () => ipcRenderer.invoke(IPC.FloatToggle),
+    resize: (expanded: boolean) => ipcRenderer.invoke(IPC.FloatResize, expanded),
+    hide: () => ipcRenderer.invoke(IPC.FloatHide),
+    getState: () => ipcRenderer.invoke(IPC.FloatGetState),
+    setActiveProvider: (id: string): void => ipcRenderer.send(IPC.FloatSetProvider, id)
+  },
+  app: {
+    openSettings: () => ipcRenderer.invoke(IPC.AppOpenSettings) as Promise<boolean>
   },
   clipboard: {
     writeText: (text: string) => ipcRenderer.invoke(IPC.ClipboardWrite, text)
   },
+  translate: {
+    getConfig: () => ipcRenderer.invoke(IPC.TranslateGetConfig) as Promise<TranslateConfig>,
+    saveConfig: (input: { appId: string; appKey: string }) =>
+      ipcRenderer.invoke(IPC.TranslateSaveConfig, input) as Promise<TranslateConfig>,
+    setPair: (pair: TranslatePairId): void => ipcRenderer.send(IPC.TranslateSetPair, pair),
+    getLast: () => ipcRenderer.invoke(IPC.TranslateGetLast) as Promise<TranslatePopupState | null>,
+    hide: () => ipcRenderer.invoke(IPC.TranslateHide) as Promise<boolean>
+  },
   on: {
+    translateResult: (cb: (state: TranslatePopupState) => void): void => {
+      ipcRenderer.on(IPC.EvTranslateResult, (_e, payload) => cb(payload))
+    }
+  },
+  onF: {
     titleChanged: (cb): void => {
-      ipcRenderer.on(IPC.EvTitleChanged, (_e, payload) => cb(payload))
+      ipcRenderer.on(IPC.EvFTitleChanged, (_e, payload) => cb(payload))
     },
     activeChanged: (cb): void => {
-      ipcRenderer.on(IPC.EvActiveChanged, (_e, payload) => cb(payload))
+      ipcRenderer.on(IPC.EvFActiveChanged, (_e, payload) => cb(payload))
     },
     loadStateChanged: (cb): void => {
-      ipcRenderer.on(IPC.EvLoadStateChanged, (_e, payload) => cb(payload))
+      ipcRenderer.on(IPC.EvFLoadStateChanged, (_e, payload) => cb(payload))
     }
   }
 }

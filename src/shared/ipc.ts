@@ -10,21 +10,38 @@ export const IPC = {
   PromptsRemove: 'prompts:remove',
   PromptsReset: 'prompts:reset',
 
-  StateGet: 'state:get',
-  StateSave: 'state:save',
+  // 站点视图通道(绑定 FloatWindow 的 ViewManager 实例;悬浮窗是唯一站点宿主)
+  FViewSetLayout: 'fview:set-layout',
+  FViewSetActive: 'fview:set-active',
+  FViewReload: 'fview:reload',
+  FViewBack: 'fview:back',
+  FViewForward: 'fview:forward',
+  /** 无参:粘贴到悬浮窗当前活动站点(提示词面板等跨窗口使用) */
+  FViewPaste: 'fview:paste',
 
-  ViewSetLayout: 'view:set-layout',
-  ViewSetActive: 'view:set-active',
-  ViewReload: 'view:reload',
-  ViewBack: 'view:back',
-  ViewForward: 'view:forward',
-  ViewOpenExternal: 'view:open-external',
-  ViewPaste: 'view:paste',
+  // 悬浮窗窗口控制
+  FloatToggle: 'float:toggle',
+  FloatResize: 'float:resize',
+  FloatHide: 'float:hide',
+  FloatGetState: 'float:get-state',
+  FloatSetProvider: 'float:set-provider',
+
+  // 设置窗口
+  AppOpenSettings: 'app:open-settings',
 
   ClipboardWrite: 'clipboard:write',
 
-  // 主进程 → 渲染层事件
-  EvTitleChanged: 'ev:title-changed',
-  EvActiveChanged: 'ev:active-changed',
-  EvLoadStateChanged: 'ev:load-state-changed'
+  // 划词翻译(配置在设置窗口填写;结果推给译文弹窗渲染层)
+  TranslateGetConfig: 'translate:get-config',
+  TranslateSaveConfig: 'translate:save-config',
+  TranslateSetPair: 'translate:set-pair',
+  TranslateGetLast: 'translate:get-last',
+  TranslateHide: 'translate:hide',
+
+  // 主进程 → 渲染层事件(悬浮窗渲染层)
+  EvFTitleChanged: 'ev:f-title-changed',
+  EvFActiveChanged: 'ev:f-active-changed',
+  EvFLoadStateChanged: 'ev:f-load-state-changed',
+  // 译文弹窗事件(只发给弹窗 webContents)
+  EvTranslateResult: 'ev:translate-result'
 } as const

@@ -14,6 +14,8 @@ const EMPTY_USER: ProviderUserFile = {}
 export class ProviderStore {
   private defaults: Provider[] = []
   private userStore = new JsonStore<ProviderUserFile>('providers.user.json', EMPTY_USER)
+  /** 合并结果缓存：list() 在每次 setLayout 的热路径上被调用，避免逐次读盘 */
+  private cache: Provider[] | null = null
 
   async init(): Promise<void> {
     const file = await readResourceJson<ProvidersDefaultFile>('providers.default.json')
@@ -23,19 +25,27 @@ export class ProviderStore {
       name: String(p.name),
       url: String(p.url),
       color: typeof p.color === 'string' ? p.color : '#D97757',
+      autoSleepMinutes: typeof p.autoSleepMinutes === 'number' ? p.autoSleepMinutes : undefined,
       enabled: true,
       builtin: true
     }))
     await this.userStore.load()
+    this.cache = null
   }
 
   async list(): Promise<Provider[]> {
+    if (this.cache) return this.cache
     const user = await this.userStore.load()
     const { items } = mergeWithUserLayer<Provider>(this.defaults, user, (base, o) => ({
       ...base,
       enabled: typeof o.enabled === 'boolean' ? o.enabled : base.enabled,
-      userAgent: typeof o.userAgent === 'string' ? o.userAgent : base.userAgent
+      userAgent: typeof o.userAgent === 'string' ? o.userAgent : base.userAgent,
+      autoSleepMinutes:
+        typeof o.autoSleepMinutes === 'number' && o.autoSleepMinutes >= 0
+          ? o.autoSleepMinutes
+          : base.autoSleepMinutes
     }))
+    this.cache = items
     return items
   }
 
@@ -49,7 +59,8 @@ export class ProviderStore {
       upsertById(overrides, {
         id: input.id,
         enabled: input.enabled ?? true,
-        ...(input.userAgent !== undefined ? { userAgent: input.userAgent } : {})
+        ...(input.userAgent !== undefined ? { userAgent: input.userAgent } : {}),
+        ...(input.autoSleepMinutes !== undefined ? { autoSleepMinutes: input.autoSleepMinutes } : {})
       })
     } else if (input.id && custom.some((c) => c.id === input.id)) {
       // 已有自定义厂商：局部更新
@@ -59,7 +70,8 @@ export class ProviderStore {
         ...(input.name?.trim() ? { name: input.name.trim() } : {}),
         ...(input.url?.trim() ? { url: normalizeUrl(input.url) } : {}),
         ...(input.color?.trim() ? { color: input.color.trim() } : {}),
-        ...(input.enabled !== undefined ? { enabled: input.enabled } : {})
+        ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+        ...(input.autoSleepMinutes !== undefined ? { autoSleepMinutes: input.autoSleepMinutes } : {})
       }
     } else {
       // 新增自定义厂商
@@ -72,10 +84,12 @@ export class ProviderStore {
         url: normalizeUrl(url),
         color: input.color?.trim() || '#D97757',
         enabled: input.enabled ?? true,
-        builtin: false
+        builtin: false,
+        ...(input.autoSleepMinutes !== undefined ? { autoSleepMinutes: input.autoSleepMinutes } : {})
       })
     }
     await this.userStore.save({ ...user, custom, overrides })
+    this.cache = null
     return this.list()
   }
 
@@ -85,6 +99,7 @@ export class ProviderStore {
       ...user,
       custom: (user.custom ?? []).filter((c) => c.id !== id)
     })
+    this.cache = null
     return this.list()
   }
 

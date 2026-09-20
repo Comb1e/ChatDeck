@@ -50,9 +50,9 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
-        // 多 HTML 入口:index.html=桌面版,float.html=悬浮窗,translate.html=译文弹窗
+        // 多 HTML 入口:settings.html=设置窗口,float.html=悬浮窗,translate.html=译文弹窗
         input: {
-          index: resolve('src/renderer/index.html'),
+          settings: resolve('src/renderer/settings.html'),
           float: resolve('src/renderer/float.html'),
           translate: resolve('src/renderer/translate.html')
         }

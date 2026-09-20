@@ -1,5 +1,34 @@
 # 迭代记录
 
+## v0.3.6（2026-09-20）
+
+形态重构（用户需求）：悬浮窗为主形态——启动默认显示悬浮窗、删除大主窗界面、设置等入口移到托盘右键菜单。
+
+### 上版问题
+
+- 产品形态仍是「主窗 + 悬浮窗」双宿主：主窗常驻一个完整渲染层（侧栏/工作区/抽屉），内存与维护成本高；悬浮窗才是用户高频入口。
+- 用户需求明确：默认显示悬浮窗、删除大界面、设置等放托盘右键。
+
+### 方法（根因）
+
+- **删除主窗**：`index.ts` 不再创建 `BrowserWindow` 主窗、删除主窗侧 `ViewManager` 实例与其 emit 桥；`floatViews` 成为站点视图唯一宿主。IPC 剪除主窗专属通道（`view:set-layout/set-active/reload/back/forward/open-external/paste`、`state:get/save`、主窗事件 `ev:title-changed` 等），`StateStore`（ui-state.json）、`stores/layout.ts`、`shared/layout.ts`、`App.vue`/`Sidebar`/`Workspace`/`Drawer` 及 `index.html` 入口整体删除。托盘左键与二次启动改为唤起悬浮窗；`window-all-closed` 改为 no-op（托盘常驻应用，防悬浮窗崩溃重建间隙误退出），退出只走托盘「退出」。
+- **设置窗口**：新增 `settingsWindow.ts`（普通有框窗口 880×660，惰性创建、关闭即销毁、已开则聚焦），渲染层新入口 `settings.html` + `settings/SettingsApp.vue`（顶部「设置 / 提示词库」标签页，复用原 Drawer 下的 SettingsPanel/PromptPanel/PromptEditor/PromptFill 组件与 stores，并承载原 Workspace 的 toast 展示）。入口三处：托盘「设置…」（新增菜单项）、悬浮窗头部齿轮按钮、`app:open-settings` IPC。
+- **悬浮窗补齐原主窗能力**：头部厂商点显示未读小红点（`providers.unread`，标题变化接线、切回即清）；`Ctrl+1~9` 切换站点迁移到悬浮窗渲染层；提示词「粘贴」目标改为悬浮窗当前活动站点——新增 `fview:paste`（无参，主进程经 `floatWin.getActiveProvider()` 解析，`FloatWindowController` 补 getter），设置窗口里的 PromptPanel/PromptFill 走此通道。
+- 顺手修正文案：翻译热键错误提示与 translateService 提示不再指"主窗口"。
+
+### 验证结果
+
+- 回归：typecheck 通过；102/102 单测通过（118 − 已随 layout store 删除的 16 个布局用例，无新增纯逻辑）。
+- dev 冒烟：启动仅 5 个 electron 进程，唯一可见窗口「ChatDeck 悬浮窗」（Win32 EnumWindows 核实），主窗不复存在；临时钩子驱动 `settingsWin.show()` →「ChatDeck 设置」窗口出现、渲染进程 5→6、用户目视确认内容渲染正常（钩子验证后已删除，grep 临时=0）。
+- 打包：v0.3.6 双包 68.1/68.3MB（与 v0.3.5 持平——删除的主窗渲染层本就由同一份组件代码打包，入口减少但组件仍在，体积不变在预期内）；打包版启动冒烟通过（进程/窗口级：仅悬浮窗一个可见窗口，主窗不复存在）。
+
+### 遗留问题
+
+- 提示词「粘贴」目标只认悬浮窗当前活动站点；悬浮窗折叠（药丸）时站点视图零矩形挂载仍可粘贴，但若活动站点已被休眠则先重建加载、粘贴可能落在加载完成的输入框之前（罕见时序，遇到时先展开悬浮窗等待加载完成）。
+- 悬浮窗 360×620 窄面板适配移动端 UA 站点；个别站点移动端布局异常时暂无桌面宽版选项（悬浮窗 UA 策略不变）。
+- v0.3.5 遗留照旧：休眠丢失页面运行状态（草稿/滚动）、后台音频中止、孤儿分区磁盘清理未做；v0.3.4/v0.3.3/v0.3.1 遗留照旧。
+- `ui-state.json` 为历史残留文件，应用不再读写，可手动删除（未做启动清理）。
+
 ## v0.3.5（2026-09-20）
 
 性能优化：内存为主（后台站点自动休眠 + 删除站点彻底清理），兼顾 CPU（逐帧磁盘读写消除）与 GPU（药丸辉光合成器化）。

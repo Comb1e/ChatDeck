@@ -2,12 +2,12 @@ import { Menu, Tray, nativeImage } from 'electron'
 import { resourceFile } from './store/jsonStore'
 
 export interface TrayDeps {
-  showMainWindow(): void
+  openSettings(): void
   toggleFloat(): void
   quit(): void
 }
 
-/** 托盘:常驻入口。悬浮窗隐藏或主窗口隐藏后,靠托盘唤起/退出 */
+/** 托盘:常驻入口。应用以悬浮窗+托盘形态运行,设置等入口都在这里 */
 export class TrayController {
   private tray: Tray | null = null
 
@@ -23,7 +23,7 @@ export class TrayController {
     this.tray = new Tray(icon)
     this.tray.setToolTip('ChatDeck')
     this.tray.setContextMenu(this.buildMenu())
-    this.tray.on('click', () => this.deps.showMainWindow())
+    this.tray.on('click', () => this.deps.toggleFloat())
   }
 
   destroy(): void {
@@ -33,7 +33,7 @@ export class TrayController {
 
   private buildMenu(): Menu {
     return Menu.buildFromTemplate([
-      { label: '打开主窗口', click: () => this.deps.showMainWindow() },
+      { label: '设置…', click: () => this.deps.openSettings() },
       { label: '显示 / 隐藏悬浮窗', click: () => this.deps.toggleFloat() },
       { type: 'separator' },
       { label: '退出 ChatDeck', click: () => this.deps.quit() }

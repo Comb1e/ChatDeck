@@ -1,14 +1,31 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onBeforeUnmount, onMounted } from 'vue'
 import { useFloatStore } from './floatStore'
+import { useProvidersStore } from '../stores/providers'
 import FloatHeader from './components/FloatHeader.vue'
 import FloatPrompts from './components/FloatPrompts.vue'
 import FloatPill from './components/FloatPill.vue'
 
 const float = useFloatStore()
 
+function onKeydown(e: KeyboardEvent): void {
+  // Ctrl+1~9 切换到第 N 个启用站点(与原桌面版快捷键一致)
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key >= '1' && e.key <= '9') {
+    const target = useProvidersStore().enabled[Number(e.key) - 1]
+    if (target) {
+      e.preventDefault()
+      float.activate(target.id)
+    }
+  }
+}
+
 onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
   void float.init()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown)
 })
 </script>
 

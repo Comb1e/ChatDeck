@@ -188,9 +188,9 @@ async function addProvider(): Promise<void> {
     <section>
       <h3 class="sec-title">关于</h3>
       <p class="about">
-        ChatDeck v0.3.5 · 国内大模型聚合工作台<br />
+        ChatDeck v0.3.6 · 国内大模型聚合工作台<br />
         每个站点使用独立存储，登录数据仅保存在本机。<br />
-        快捷键：Ctrl + 1~9 切换站点，Ctrl + Q 划词翻译。
+        快捷键：Ctrl + 1~9 切换站点（悬浮窗），Ctrl + Q 划词翻译。
       </p>
     </section>
   </div>

@@ -47,12 +47,16 @@ export const useFloatStore = defineStore('float', {
           ? saved.activeProviderId
           : (enabled[0]?.id ?? null)
 
-      window.api.onF.titleChanged(() => {}) // 标题暂无展示位,占位保持事件桥完整
+      window.api.onF.titleChanged((e) => {
+        // 站点标题变化 = 可能有新消息;非活动站点记未读(头部圆点提示)
+        providersStore.onTitleChanged(e.id, e.title, e.id === this.activeId)
+      })
       window.api.onF.activeChanged((e) => {
         // 用户点击视图内部获得焦点 → 同步活动站点
         if (e.id !== this.activeId) {
           this.activeId = e.id
           window.api.float.setActiveProvider(e.id)
+          providersStore.clearUnread(e.id)
         }
       })
       window.api.onF.loadStateChanged((e) => {
@@ -68,6 +72,7 @@ export const useFloatStore = defineStore('float', {
       if (!providers.byId(id)?.enabled) return
       this.activeId = id
       this.mode = 'chat'
+      providers.clearUnread(id)
       window.api.float.setActiveProvider(id)
       window.api.fview.setActive(id)
       this.sync()

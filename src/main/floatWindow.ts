@@ -67,7 +67,7 @@ export class FloatWindowController {
     return this.expanded
   }
 
-  /** 托盘/主窗口侧:显示或隐藏悬浮窗 */
+  /** 托盘等外部入口:显示或隐藏悬浮窗 */
   toggle(): boolean {
     if (this.isVisible()) {
       this.hide()
@@ -155,6 +155,11 @@ export class FloatWindowController {
   setActiveProvider(id: string): void {
     this.activeProviderId = id
     void this.persist()
+  }
+
+  /** 悬浮窗当前活动站点(提示词粘贴等跨窗口操作的目标) */
+  getActiveProvider(): string | null {
+    return this.activeProviderId
   }
 
   // ------------------------------------------------------------------

@@ -41,16 +41,6 @@ export interface PromptInput {
   content: string
 }
 
-/** 主进程持久化的界面状态 */
-export interface UiState {
-  activeProviderId: string | null
-  mode: LayoutMode
-  paneProviderIds: string[]
-  ratios: number[]
-}
-
-export type LayoutMode = 'single' | 'split2' | 'split3'
-
 export interface Rect {
   x: number
   y: number

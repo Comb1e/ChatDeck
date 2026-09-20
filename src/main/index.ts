@@ -1,13 +1,12 @@
-import { join } from 'node:path'
-import { app, BrowserWindow, Menu, globalShortcut, powerMonitor, screen } from 'electron'
+import { app, Menu, globalShortcut, powerMonitor, screen } from 'electron'
 import { IPC } from '@shared/ipc'
 import { formatDirection, resolveDirection } from '@shared/translate'
 import type { TranslatePopupState } from '@shared/translate'
 import { ProviderStore } from './store/providerStore'
 import { PromptStore } from './store/promptStore'
-import { StateStore } from './store/stateStore'
 import { MOBILE_UA, ViewManager } from './viewManager'
 import { FloatWindowController } from './floatWindow'
+import { SettingsWindowController } from './settingsWindow'
 import { TrayController } from './tray'
 import { registerIpc } from './ipc'
 import { TranslateService } from './translateService'
@@ -16,11 +15,9 @@ import { captureSelectedText } from './textCapture'
 
 const stores = {
   providers: new ProviderStore(),
-  prompts: new PromptStore(),
-  state: new StateStore()
+  prompts: new PromptStore()
 }
-// 桌面版与悬浮窗各持一个视图管理器;同名 persist 分区即共享登录态
-const viewManager = new ViewManager()
+// ChatDeck 以「悬浮窗 + 托盘」形态运行,悬浮窗是站点视图的唯一宿主
 const floatViews = new ViewManager(MOBILE_UA)
 const translate = new TranslateService()
 // 译文弹窗依附悬浮窗(正上方),纯跟随不持久化位置
@@ -35,20 +32,16 @@ const floatWin = new FloatWindowController({
   // 重建窗口前把站点视图从旧窗口摘下(留在缓存),随新窗口 boot 后的 setLayout 重新挂载
   onDetachViews: () => floatViews.setLayout([])
 })
-let mainWindow: BrowserWindow | null = null
+const settingsWin = new SettingsWindowController()
 let tray: TrayController | null = null
-let isQuitting = false
 
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
 } else {
+  // 二次启动:唤起悬浮窗(应用无常驻主窗)
   app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.show()
-      mainWindow.focus()
-    }
+    floatWin.show()
   })
 
   void app.whenReady().then(bootstrap)
@@ -57,47 +50,6 @@ if (!gotLock) {
 async function bootstrap(): Promise<void> {
   Menu.setApplicationMenu(null)
   await Promise.all([stores.providers.init(), stores.prompts.init(), floatWin.restore(), translate.init()])
-
-  const win = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 1080,
-    minHeight: 680,
-    show: false,
-    backgroundColor: '#FAF9F5',
-    title: 'ChatDeck',
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      spellcheck: false
-    }
-  })
-  mainWindow = win
-  viewManager.attachWindow(win)
-
-  win.on('ready-to-show', () => win.show())
-  // 悬浮窗存活时关主窗 = 隐藏到托盘;真正退出走托盘「退出」
-  win.on('close', (e) => {
-    if (!isQuitting && floatWin.getWindow()) {
-      e.preventDefault()
-      win.hide()
-    }
-  })
-  win.on('closed', () => {
-    mainWindow = null
-  })
-
-  // 主进程 → 主窗口渲染层事件桥
-  const emit = (channel: string, payload: unknown): void => {
-    if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send(channel, payload)
-  }
-  viewManager.hook({
-    onTitleChanged: (id, title) => emit(IPC.EvTitleChanged, { id, title }),
-    onActiveChanged: (id) => emit(IPC.EvActiveChanged, { id }),
-    onLoadStateChanged: (id, state) => emit(IPC.EvLoadStateChanged, { id, state })
-  })
 
   // 主进程 → 悬浮窗渲染层事件桥
   const emitF = (channel: string, payload: unknown): void => {
@@ -111,33 +63,24 @@ async function bootstrap(): Promise<void> {
   })
 
   tray = new TrayController({
-    showMainWindow: () => {
-      if (!mainWindow || mainWindow.isDestroyed()) return
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.show()
-      mainWindow.focus()
-    },
+    openSettings: () => settingsWin.show(),
     toggleFloat: () => {
       floatWin.toggle()
     },
     quit: () => {
-      isQuitting = true
       app.quit()
     }
   })
   tray.create()
 
-  registerIpc({ ...stores, views: viewManager, floatViews, floatWin, translate, translateWin })
+  registerIpc({ ...stores, floatViews, floatWin, settingsWin, translate, translateWin })
   registerTranslateHotkey()
 
+  // 默认显示悬浮窗(按持久化的位置与展开态)
+  floatWin.show()
+
   // 后台站点休眠扫描:每分钟检查一次,超过站点休眠阈值未显示的站点视图销毁释放内存
-  setInterval(
-    () => {
-      viewManager.sweepSleep()
-      floatViews.sweepSleep()
-    },
-    60_000
-  )
+  setInterval(() => floatViews.sweepSleep(), 60_000)
 
   // 透明悬浮窗自愈:锁屏/休眠唤醒/显卡驱动重置后 DWM 合成表面可能失效(整窗透明"消失",
   // isVisible 仍为 true 导致托盘第一击 toggle 反而执行隐藏),在这些事件后强制恢复;
@@ -149,17 +92,10 @@ async function bootstrap(): Promise<void> {
   })
   screen.on('display-removed', () => floatWin.reclamp())
   screen.on('display-metrics-changed', () => floatWin.reclamp())
-
-  if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
-    await win.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    await win.loadFile(join(__dirname, '../renderer/index.html'))
-  }
 }
 
-app.on('window-all-closed', () => {
-  app.quit()
-})
+// 托盘常驻应用:窗口全部关闭(悬浮窗重建间隙等)也不退出,退出只走托盘「退出」
+app.on('window-all-closed', () => {})
 
 // ---- 划词翻译:Ctrl+Q 全局取词 → 百度翻译 → 悬浮窗正上方弹窗 ----
 
@@ -189,7 +125,7 @@ async function handleTranslateHotkey(): Promise<void> {
 
   if (!translate.hasCredentials()) {
     translateWin.show()
-    translateWin.sendState({ ...base, status: 'error', message: '未配置百度翻译：请在主窗口设置中填写 APPID/KEY' })
+    translateWin.sendState({ ...base, status: 'error', message: '未配置百度翻译：请在设置中填写 APPID/KEY' })
     return
   }
   translateWin.show()
@@ -204,9 +140,7 @@ async function handleTranslateHotkey(): Promise<void> {
 }
 
 app.on('before-quit', () => {
-  isQuitting = true
   globalShortcut.unregisterAll()
-  viewManager.destroyAll()
   floatViews.destroyAll()
   tray?.destroy()
 })

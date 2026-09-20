@@ -4,7 +4,6 @@ import type {
   PromptInput,
   Provider,
   ProviderInput,
-  UiState,
   ViewLoadState
 } from './types'
 import type { TranslateConfig, TranslatePairId, TranslatePopupState } from './translate'
@@ -23,30 +22,19 @@ export interface DeckApi {
     remove(id: string): Promise<PromptLibrary>
     reset(): Promise<PromptLibrary>
   }
-  state: {
-    get(): Promise<UiState | null>
-    save(state: UiState): Promise<void>
-  }
-  view: {
-    setLayout(entries: PaneLayoutEntry[]): Promise<boolean>
-    setActive(id: string): void
-    reload(id: string): void
-    back(id: string): void
-    forward(id: string): void
-    openExternal(id: string): void
-    paste(id: string): void
-  }
-  /** 悬浮窗专用视图通道(仅悬浮窗渲染层调用,绑定 FloatWindow 的视图管理器) */
+  /** 悬浮窗站点视图通道(绑定 FloatWindow 的视图管理器) */
   fview: {
     setLayout(entries: PaneLayoutEntry[]): Promise<boolean>
     setActive(id: string): void
     reload(id: string): void
     back(id: string): void
     forward(id: string): void
+    /** 粘贴到悬浮窗当前活动站点(提示词面板从设置窗口调用) */
+    paste(): Promise<boolean>
   }
   /** 悬浮窗窗口控制 */
   float: {
-    /** 主窗口侧唤起/收起悬浮窗 */
+    /** 托盘等外部入口唤起/收起悬浮窗 */
     toggle(): Promise<boolean>
     /** 悬浮窗内部:展开/折叠 */
     resize(expanded: boolean): Promise<boolean>
@@ -54,6 +42,11 @@ export interface DeckApi {
     hide(): Promise<boolean>
     getState(): Promise<FloatWindowState>
     setActiveProvider(id: string): void
+  }
+  /** 应用级入口 */
+  app: {
+    /** 打开设置窗口(悬浮窗齿轮/托盘共用同一窗口,已开则聚焦) */
+    openSettings(): Promise<boolean>
   }
   clipboard: {
     writeText(text: string): Promise<boolean>
@@ -69,13 +62,11 @@ export interface DeckApi {
     getLast(): Promise<TranslatePopupState | null>
     hide(): Promise<boolean>
   }
+  /** 主进程 → 译文弹窗渲染层事件(仅弹窗会收到) */
   on: {
-    titleChanged(cb: (e: { id: string; title: string }) => void): void
-    activeChanged(cb: (e: { id: string }) => void): void
-    loadStateChanged(cb: (e: { id: string; state: ViewLoadState }) => void): void
-    /** 仅译文弹窗渲染层会收到(主进程只发给弹窗 webContents) */
     translateResult(cb: (state: TranslatePopupState) => void): void
   }
+  /** 主进程 → 悬浮窗渲染层事件 */
   onF: {
     titleChanged(cb: (e: { id: string; title: string }) => void): void
     activeChanged(cb: (e: { id: string }) => void): void

@@ -92,7 +92,7 @@ export class TranslateService {
     const clean = sanitizeSelection(text)
     if (!clean) return { ok: false, message: '未取到选中文本' }
     if (!this.hasCredentials()) {
-      return { ok: false, message: '未配置百度翻译：请在主窗口设置中填写 APPID/KEY' }
+      return { ok: false, message: '未配置百度翻译：请在设置中填写 APPID/KEY' }
     }
 
     const gap = MIN_REQUEST_INTERVAL_MS - (Date.now() - this.lastCallAt)

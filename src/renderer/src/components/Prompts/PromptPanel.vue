@@ -4,11 +4,9 @@ import type { Prompt } from '@shared/types'
 import { hasPlaceholders, renderContent } from '@shared/prompts'
 import { usePromptsStore } from '../../stores/prompts'
 import { useUiStore } from '../../stores/ui'
-import { useLayoutStore } from '../../stores/layout'
 
 const prompts = usePromptsStore()
 const ui = useUiStore()
-const layout = useLayoutStore()
 
 const search = ref('')
 const activeCategory = ref('全部')
@@ -44,14 +42,13 @@ async function exec(content: string, values: Record<string, string>, pasteAfter:
   const text = renderContent(content, values)
   await window.api.clipboard.writeText(text)
   if (pasteAfter) {
-    const target = layout.activeId
-    if (!target) {
+    // 粘贴目标 = 悬浮窗当前活动站点(主进程解析)
+    const ok = await window.api.fview.paste()
+    if (!ok) {
       ui.showToast('当前没有活动站点')
       return
     }
-    ui.close()
-    window.api.view.paste(target)
-    ui.showToast('已复制，正在粘贴到当前站点（若无效请手动 Ctrl+V）')
+    ui.showToast('已复制，正在粘贴到活动站点（若无效请手动 Ctrl+V）')
   } else {
     ui.showToast('已复制到剪贴板')
   }

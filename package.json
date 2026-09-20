@@ -1,6 +1,6 @@
 {
   "name": "chatdeck",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "ChatDeck — 国内大模型聚合工作台",
   "main": "./out/main/index.js",
   "author": "CYK",

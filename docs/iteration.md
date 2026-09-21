@@ -8,6 +8,7 @@
 
 - 余额监控只有 sub2api 网关与 DeepSeek 官方两类适配器；用户订阅了火山方舟编码计划（console.volcengine.com/ark），希望在小窗里看到每五小时额度。
 - 入口可发现性差：打开余额小窗的唯一路径是托盘右键勾选「余额监控」，悬浮窗头部与设置窗口均无入口（用户实测反馈"没有进入余额监控设置的入口"）。
+- **胶囊完全点不动（用户反馈"无法添加/编辑站点"）**：`#pill` 本体是 `-webkit-app-region: drag` 拖拽区（拖动移动窗口用），Electron 拖拽区会吞掉一切鼠标事件——移植自原版的 `pill.click/contextmenu → expand` 监听从未生效过，v0.5.0 的"展开卡片全部可用"实际只经键盘/合成 click 验证，鼠标主路径是断的。
 
 ### 方法（根因）
 
@@ -15,6 +16,7 @@
 - **适配器** `providers/volcark.ts`：`signVolcRequest` 独立纯函数实现 SigV4（派生链 HMAC(SK→日期→region→service→"request")）；只取 `Level='session'`（即五小时会话窗口，缺失回退第一条）；额度以 `currency='PCT'` 流转，与货币站点天然互斥。凭据复用 `accessToken`=AccessKeyId、`refreshToken`=SecretAccessKey 字段（`BalanceTokenField.key` 联合类型不改 IPC 即可承载两枚密钥，界面文案引导区分）。
 - **PCT 显示适配**：`formatBalance` 抽到 `shared/balance.ts`（通知与渲染层共用一份，消除原 `money`/`fmtMoney` 双份实现）；胶囊值 `35%`、列表副行「五小时额度已用 X% · HH:MM 重置」（重置时间经 `BalanceResult.note` → 状态 `message` 流转，仅 ok 态展示）、悬停 tooltip 补"已用"语义；合计块排除 PCT 站点（百分比相加无意义）；`requestJson` 修复 content-type 合并策略（调用方自带时不注入默认值——SigV4 对 content-type 签名，双份合并必然 SignatureDoesNotMatch）。
 - **入口**（共用新 IPC `balance:toggle`，`mode='show'` 表示幂等打开）：悬浮窗头部钱包按钮（toggle）、设置窗口「余额监控」区块（只打开）；托盘勾选态经既有 `onVisibilityChanged` 继续同步。
+- **胶囊展开按钮**：`#pill` 保持拖拽区（拖动移动窗口），右缘新增 `#pillExpand`（no-drag 实体按钮）作为鼠标展开站点管理的唯一入口；另加 `[hidden]{display:none!important}` 兜底（author display 规则会压掉 hidden 的 UA 样式，表现为编辑已有站点时"站点类型"标签漏显示）。
 - 图标补 simple-icons 的字节跳动路径（CC0）。
 
 ### 验证结果
@@ -23,6 +25,7 @@
 - 签名独立对照：测试内按火山 SigV4 规范从零重推签名逐位一致；同输入签名确定、SK 变则变（反例）。
 - **真端点冒烟**（临时脚本，已删）：假凭据请求真实 `open.volcengineapi.com` → HTTP 401 + `InvalidAccessKey`，信封回显 `Action=GetCodingPlanUsage/Service=ark/Region=cn-beijing`——服务端成功解析路由请求且**签名格式被接受**（签名错误会返回 SignatureDoesNotMatch），仅假 AK 不存在。
 - dev 冒烟（临时钩子，已删，grep 临时=0）：注入假凭据 volcark 站点后真实拉取 → auth-error（预期），三个既有站点余额照常（SpacetimeAI 4.97USD / Sub2API 6.93USD / DeepSeek 7.52CNY，`requestJson` 改动无回归）；胶囊四行渲染正常。
+- **真实鼠标点击链路**（SetCursorPos+mouse_event 黑盒点击 dev 实例，修复后逐环截图确认）：胶囊右缘按钮 → 管理卡片展开 ✓；点击站点行 → 编辑表单（名称/地址/图标/凭据留空保持/删除/返回齐全）✓；返回列表 →「+」→ 添加站点类型选择器含「火山方舟 Coding Plan」✓。修复前对照组：精确点击胶囊正中心无任何反应（复现用户反馈）。
 - 用户配置零污染：真实 `balance.user.json` 先备份再注入假站点，验证后恢复（3 站点原样）。
 
 ### 遗留问题

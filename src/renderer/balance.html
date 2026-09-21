@@ -11,8 +11,12 @@
   <body>
     <div id="app">
       <!-- 收起态:胶囊(多站点余额组) -->
-      <div id="pill" class="surface" role="button" aria-label="展开余额详情" tabindex="0">
+      <div id="pill" class="surface" role="button" aria-label="余额胶囊" tabindex="0">
         <div id="pillGroups"></div>
+        <!-- 拖拽区(#pill 本体)吞掉鼠标事件,展开必须走这个 no-drag 按钮 -->
+        <button id="pillExpand" title="展开站点管理" aria-label="展开站点管理">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 15.9 4.6 8.5 6 7.1l6 6 6-6 1.4 1.4z"/></svg>
+        </button>
       </div>
 
       <!-- 展开态:卡片 -->

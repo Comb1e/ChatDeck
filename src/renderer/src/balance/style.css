@@ -18,6 +18,9 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* author display 规则会压掉 [hidden] 的 UA 样式(.field 等有 display),统一切回 display:none */
+[hidden] { display: none !important; }
+
 html, body {
   background: transparent;
   overflow: hidden;
@@ -41,15 +44,38 @@ body { padding: 6px; }
 /* ---------- 收起态:每站点一行,窗口随内容自适应 ---------- */
 
 #pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-height: 32px;
   border-radius: 18px; /* 单行时由 JS 切回 999px 胶囊形 */
-  padding: 7px 14px;
+  padding: 7px 8px 7px 14px;
   cursor: default;
   -webkit-app-region: drag;
   transition: box-shadow 0.15s ease;
 }
 
 #pill:hover { box-shadow: 0 2px 4px rgba(29, 27, 22, 0.08), 0 12px 36px rgba(29, 27, 22, 0.2); }
+
+/* 拖拽区吞掉一切鼠标事件:展开入口必须是 no-drag 的实体按钮 */
+#pillExpand {
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
+  align-self: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-faint);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+#pillExpand svg { width: 16px; height: 16px; }
+#pillExpand:hover {
+  background: var(--bg-soft);
+  color: var(--accent-deep);
+}
 
 #pillGroups {
   display: flex;

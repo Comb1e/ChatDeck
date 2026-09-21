@@ -22,6 +22,7 @@ const els = {
   app: $('app'),
   pill: $('pill'),
   pillGroups: $('pillGroups'),
+  pillExpand: $<HTMLButtonElement>('pillExpand'),
   card: $('card'),
   cardTitle: $('cardTitle'),
   btnAdd: $('btnAdd'),
@@ -494,7 +495,12 @@ function render(s: BalanceSnapshot): void {
 
 // ---------- 事件 ----------
 
-// 右键悬浮窗 = 直达站点管理(编辑视图入口)
+// #pill 本体是窗口拖拽区(app-region: drag),原生吞掉 click/contextmenu——
+// 鼠标展开只能走 #pillExpand(no-drag);键盘 Enter 走合成 click,仍可用
+els.pillExpand.addEventListener('click', (e) => {
+  e.stopPropagation()
+  expand()
+})
 els.pill.addEventListener('contextmenu', (e) => {
   e.preventDefault()
   expand()

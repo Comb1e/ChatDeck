@@ -250,10 +250,11 @@ describe('多站点调度:并行轮询与独立状态机', () => {
 })
 
 describe('站点类型注册表', () => {
-  it('describeTypes 含 sub2api 与 deepseek', () => {
+  it('describeTypes 含 sub2api 与 deepseek 与 volcark', () => {
     const types = describeTypes()
     expect(types.some((t) => t.id === 'sub2api')).toBe(true)
     expect(types.some((t) => t.id === 'deepseek')).toBe(true)
+    expect(types.some((t) => t.id === 'volcark')).toBe(true)
   })
 
   it('describeNewSite 按类型预填默认值', () => {
@@ -266,6 +267,58 @@ describe('站点类型注册表', () => {
     })
     const sold = describeNewSite('sub2api')
     expect(sold).toMatchObject({ type: 'sub2api', apiBaseUrl: '', icon: 'openai' })
+    const ark = describeNewSite('volcark')
+    expect(ark).toMatchObject({ type: 'volcark', apiBaseUrl: 'https://open.volcengineapi.com', icon: 'bytedance' })
+  })
+
+  it('volcark 站点:note 进 message,货币单位为 PCT,未配置前占位也用 PCT', async () => {
+    vi.stubGlobal('fetch', async () => ({
+      status: 200,
+      json: async () => ({
+        ResponseMetadata: { RequestId: 'r' },
+        Result: { QuotaUsage: [{ Level: 'session', Percent: 41.2, ResetTimestamp: 1758000000 }] }
+      })
+    }))
+    const store = new BalanceStore(tmpConfig)
+    const scheduler = new BalanceScheduler(store)
+    store.upsertSite({
+      id: 'ark',
+      type: 'volcark',
+      label: '火山方舟',
+      icon: 'bytedance',
+      apiBaseUrl: 'https://open.volcengineapi.com',
+      usageUrl: '',
+      accessToken: 'AK',
+      refreshToken: 'SK',
+      enabled: true
+    })
+    const snap = await scheduler.tick()
+    // 默认配置预置了占位站点 spacetimeai 在前,按 id 取 volcark 站点
+    expect(snap.sites.find((s) => s.id === 'ark')).toMatchObject({
+      status: 'ok',
+      balance: 41.2,
+      currency: 'PCT',
+      message: new Date(1758000000 * 1000).toISOString() // note → message(ok 态展示重置时间)
+    })
+
+    // 新增一个未配置凭据的 volcark 站点:全新 base 态的 currency 应取适配器 balanceUnit
+    store.upsertSite({
+      id: 'ark2',
+      type: 'volcark',
+      label: '方舟2',
+      icon: 'bytedance',
+      apiBaseUrl: 'https://open.volcengineapi.com',
+      usageUrl: '',
+      accessToken: '',
+      refreshToken: '',
+      enabled: true
+    })
+    const snap2 = await scheduler.tick()
+    expect(snap2.sites.find((s) => s.id === 'ark2')).toMatchObject({
+      status: 'no-token',
+      currency: 'PCT',
+      balance: null
+    })
   })
 
   it('describeAll 不含任何凭据字段', () => {

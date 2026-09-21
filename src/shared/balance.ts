@@ -122,3 +122,14 @@ export interface BalanceRefreshResult {
   ok: boolean
   message?: string
 }
+
+/**
+ * 余额/额度的统一显示格式(通知与渲染层共用一份,避免双份实现漂移)。
+ * 货币加符号;PCT 表示"五小时额度已用百分比"(火山方舟 Coding Plan),显示整数+%,不参与货币合计。
+ */
+const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', CNY: '¥' }
+export function formatBalance(balance: number | null, currency: string): string {
+  if (currency === 'PCT') return `${Math.round(Number(balance))}%`
+  const sym = CURRENCY_SYMBOLS[currency] || CURRENCY_SYMBOLS.USD
+  return `${sym}${Number(balance).toFixed(2)}`
+}

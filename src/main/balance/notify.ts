@@ -4,14 +4,7 @@
  */
 import { Notification } from 'electron'
 import type { BalanceSnapshot } from '@shared/balance'
-
-/** 币种符号（余额显示与通知共用）；未知币种按 USD 处理 */
-const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', CNY: '¥' }
-
-export function fmtMoney(balance: number | null, currency: string): string {
-  const sym = CURRENCY_SYMBOLS[currency] || CURRENCY_SYMBOLS.USD
-  return `${sym}${Number(balance).toFixed(2)}`
-}
+import { formatBalance } from '@shared/balance'
 
 export class BalanceNotifier {
   private readonly lastStatusBySite = new Map<string, string>()
@@ -33,7 +26,7 @@ export class BalanceNotifier {
           s.status === 'ok' &&
           ['network-error', 'api-error', 'auth-error'].includes(prev)
         ) {
-          this.notify('余额已恢复更新', `${s.label}: ${fmtMoney(s.balance, s.currency)}`)
+          this.notify('余额已恢复更新', `${s.label}: ${formatBalance(s.balance, s.currency)}`)
         }
       }
       this.lastStatusBySite.set(s.id, s.status)

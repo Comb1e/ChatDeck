@@ -193,6 +193,10 @@ export function registerIpc(deps: IpcDeps): void {
   )
   ipcMain.handle(IPC.BalanceRemoveSite, (_e, id: string) => balanceScheduler.removeSite(String(id)))
   ipcMain.handle(IPC.BalanceRefresh, () => balanceScheduler.refreshNow())
+  ipcMain.on(IPC.BalanceToggle, (_e, mode: unknown) => {
+    if (mode === 'show') void balanceWin.show()
+    else void balanceWin.toggle()
+  })
   ipcMain.on(IPC.BalanceOpenUsage, (_e, siteId: unknown) => {
     const site = balanceStore.getSite(String(siteId ?? ''))
     if (site?.usageUrl) void shell.openExternal(site.usageUrl)

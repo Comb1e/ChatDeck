@@ -20,6 +20,10 @@ function collapse(): void {
 function openSettings(): void {
   void window.api.app.openSettings()
 }
+
+function toggleBalance(): void {
+  window.api.balance.toggle()
+}
 </script>
 
 <template>
@@ -30,6 +34,13 @@ function openSettings(): void {
       <span class="wordmark">ChatDeck</span>
       <span class="mono-tag">FLOAT</span>
       <span class="flex" />
+      <button class="wbtn" title="余额监控" @click="toggleBalance()">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 7H5a2 2 0 0 1-2-2 2 2 0 0 1 2-2h13v4" />
+          <path d="M3 5v13a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1H5a2 2 0 0 1-2-2" />
+          <path d="M16.5 13.5h.01" />
+        </svg>
+      </button>
       <button class="wbtn" title="设置" @click="openSettings()">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
           <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" />

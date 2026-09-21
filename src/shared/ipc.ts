@@ -55,6 +55,8 @@ export const IPC = {
   BalanceRemoveSite: 'balance:remove-site',
   BalanceRefresh: 'balance:refresh',
   BalanceOpenUsage: 'balance:open-usage',
+  /** 打开/关闭余额小窗(悬浮窗头部与设置窗口的入口;托盘勾选态跟随) */
+  BalanceToggle: 'balance:toggle',
   /** 渲染层按内容测量的窗口尺寸(主进程按工作区钳制) */
   BalanceResize: 'balance:resize',
 

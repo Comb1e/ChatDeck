@@ -83,12 +83,13 @@ export class BalanceScheduler {
     }
 
     try {
-      const { balance, currency } = await adapter.getBalance({ site, onTokensRefreshed })
+      const { balance, currency, note } = await adapter.getBalance({ site, onTokensRefreshed })
       this.replaceSiteState(site.id, {
         status: 'ok',
         balance,
         currency: currency || adapter.balanceUnit || 'USD',
-        message: null,
+        // note 为成功态补充说明(如 volcark 的额度重置时间),ok 态由渲染层展示
+        message: note ?? null,
         updatedAt: nowIso(),
         lastSuccessAt: nowIso()
       })
@@ -144,7 +145,8 @@ export class BalanceScheduler {
         enabled: site.enabled !== false,
         status: site.enabled === false ? 'disabled' : 'no-token',
         balance: null,
-        currency: 'USD',
+        // 首次成功前错误占位也要按适配器单位显示(如 volcark 的 '--' 而非 '$ --')
+        currency: getAdapter(site.type)?.balanceUnit || 'USD',
         message: null,
         updatedAt: null,
         lastSuccessAt: null

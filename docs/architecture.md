@@ -146,11 +146,17 @@ whale/app.ts（编排:主循环/行为大脑/输入/接线）
   ├─ 每站点 Promise.allSettled 并发 → 适配器 getBalance()
   │    ├─ sub2api 网关: GET <base>/auth/me（Bearer access_token）
   │    │     401 → POST <base>/auth/refresh（refresh_token 会轮换，新值写回该站点）→ 重试一次
-  │    └─ DeepSeek 官方: GET <base>/user/balance（Bearer API Key；币种随响应返回 CNY/USD）
+  │    ├─ DeepSeek 官方: GET <base>/user/balance（Bearer API Key；币种随响应返回 CNY/USD）
+  │    └─ 火山方舟 Coding Plan: POST open.volcengineapi.com/?Action=GetCodingPlanUsage&Version=2024-01-01
+  │          （火山 SigV4 请求签名，service=ark / region=cn-beijing；凭据是 IAM 访问密钥 AK/SK，
+  │           不是推理用的 Ark API Key。响应 Result.QuotaUsage[] 取 Level='session'——即五小时
+  │           会话窗口，Percent 为已用比例，currency='PCT' 显示为整数百分比+重置时间）
   ├─ 状态快照 → ① pushState → 余额小窗渲染层（ev:balance-state）
   │             ② BalanceNotifier：仅状态切换沿发系统通知（Token 失效 / 余额恢复）
   └─ 保存站点：先落盘再立即实测验证（验证失败也保留配置，列表里显示错误态）
 ```
+
+入口三处：托盘右键「余额监控」勾选、悬浮窗头部钱包按钮（toggle）、设置窗口「余额监控」区块（只打开）；后两者走 `balance:toggle` IPC（悬浮窗头部与设置窗口共用），勾选态经 `onVisibilityChanged` 同步回托盘。
 
 ### 每站点状态机（`balance/scheduler.ts`，互不影响）
 
@@ -173,7 +179,7 @@ ok/*-error ──定时/手动刷新──▶ loading        disabled：站点�
 |---|---|---|
 | 配置位置 | 项目根 `config.json`（打包进 asar 后只读 → 写失败） | `%APPDATA%/chatdeck/balance.user.json`（原子写：临时文件 + rename） |
 | 窗口层级 | `screen-saver` | `floating`（与悬浮窗/鲸鱼一致，不盖系统托盘/输入法） |
-| 托盘 | 自带托盘（站点管理 / 立即刷新 / 显隐 / 开机自启 / 退出） | 只用 ChatDeck 托盘一项「余额监控」开关（勾选态跟随显隐）；其余入口在窗口内（右键胶囊 = 站点管理） |
+| 托盘 | 自带托盘（站点管理 / 立即刷新 / 显隐 / 开机自启 / 退出） | 只用 ChatDeck 托盘一项「余额监控」开关（勾选态跟随显隐）；其余入口在窗口内（右键胶囊 = 站点管理），另有悬浮窗头部按钮与设置窗口「余额监控」区块 |
 | 开机自启 | 独立开关 | 交给 ChatDeck 设置窗口已有开关（避免双份注册表写入） |
 | 浏览器 Mock 预览 | 有（preload 失效时静默显示假数据） | 去掉（避免误导） |
 | 通知文案 | "请点击悬浮窗…" | "请点击余额小窗…"（ChatDeck 里悬浮窗是另一个窗口） |
@@ -277,7 +283,7 @@ scripts/              开发期工具（make-icon.mjs 生成应用/托盘图标�
 build/                打包资源（icon.ico，electron-builder 默认 buildResources 目录）
 src/shared/           前后端共享：类型、IPC 常量、纯函数（merge/viewState/prompts/floatLayout/translate/balance）、鲸鱼配置、API 接口
 src/main/             主进程：floatWindow、whaleWindow、settingsWindow、translateWindow、translateService、textCapture、tray、ViewManager、IPC、两个 store
-src/main/balance/     余额监控主进程：store（配置读写/迁移）、providers/*（sub2api 与 DeepSeek 适配器 + 注册表）、scheduler（轮询 + 每站点状态机）、notify（状态切换沿通知）、window（小窗控制器）
+src/main/balance/     余额监控主进程：store（配置读写/迁移）、providers/*（sub2api/DeepSeek/火山方舟适配器 + 注册表）、scheduler（轮询 + 每站点状态机）、notify（状态切换沿通知）、window（小窗控制器）
 src/preload/          contextBridge：index.ts（主 API，五个渲染层共用）、error.ts（错误页重试）
 src/renderer/         界面：whale.html（鲸鱼）+ float.html（悬浮窗）+ balance.html（余额小窗）+ settings.html（设置窗口）+ translate.html（译文弹窗）
 src/renderer/src/whale/     鲸鱼渲染层：app/states/whale/particles/runtime/tween/fsm/context/badge（纯 TS,无 Vue）
@@ -324,10 +330,12 @@ app.asar（out/** 打包）        安装目录/resources/（extraResources 平�
 ## 测试
 
 - `npm run typecheck`：`tsconfig.node.json`（主进程/preload/shared）+ `tsconfig.web.json`（渲染层）+ `tsconfig.test.json`（测试，含 DOM 与主进程业务模块的类型）。
-- `npm test`：163 用例。
+- `npm test`：178 用例。
   - 鲸鱼部分移植自 whale-pet 的 `runtime.test.js` / `animation.test.js`，用独立对照（临界阻尼解析解、RK4 积分、de Casteljau 曲线、细分离线弧长）与边界用例（0/负尺寸工作区、离屏起点、极值缩放、抖动刷新率）验证移植保真：
     - `tests/whaleRuntime.test.ts`：输入状态机、光标采样过期规则、弹簧/摆尾相位、泳路规划、投掷限幅、帧调度器、粒子轨迹与对象池、tween/FSM 取消语义。
     - `tests/whaleStates.test.ts`：编排过渡不跳变、按压取消不重置形状、泳路完成与中途取消、形变有界与命中几何、入水事件取消、水线同步清除、短弧旋转恢复、surface 定点浮出。
   - 余额部分移植自 token-balance 的 `test-provider-shapes.js` / `test-deepseek.js` / `test-multi-site.js`（原为独立 node 脚本 + `Module._resolveFilename` 打补丁，现在改为构造参数注入临时配置路径）：
     - `tests/balanceProviders.test.ts`：两个协议的成功/嵌套/平铺形态、余额 0 与字符串余额、code≠0、字段缺失、非 JSON、401→续期→重试、续期失败、凭据缺失（setup）、轮换凭据回调。
     - `tests/balanceScheduler.test.ts`：旧格式配置无损迁移、interval 钳制、窗口状态持久化、四站点混合类型并行轮询与独立状态机、断网/停用、保存校验（重复地址/非法地址/留空保持）、删除、类型注册表、描述对象不含凭据（序列化断言）。
+    - `tests/balanceVolcark.test.ts`：火山 SigV4 签名（独立对照重推逐位比对 + 同输入确定/SK 变则变）、QuotaUsage 解析（session 优先/回退首条/秒级时间戳转 ISO/字段缺失）、getBalance 请求形态（POST/URL/头/空体/凭据不进 URL）、错误信封分类（SignatureDoesNotMatch→auth、InternalError→api、HTTP 403→auth）、注册表默认值。
+    - 火山协议的另一道独立验证：真端点冒烟（临时脚本，不入仓库）——假凭据请求 open.volcengineapi.com 返回 HTTP 401 + `InvalidAccessKey` 且信封回显 `Action=GetCodingPlanUsage/Service=ark`，证明签名格式被服务端接受，仅假 AK 不存在。

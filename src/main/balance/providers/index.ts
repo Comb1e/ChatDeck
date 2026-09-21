@@ -14,11 +14,13 @@ import type {
 import type { BalanceProvider } from './base'
 import { sub2apiProvider } from './sub2api'
 import { deepseekProvider } from './deepseek'
+import { volcarkProvider } from './volcark'
 import type { BalanceStore } from '../store'
 
 const ADAPTERS: Record<string, BalanceProvider> = {
   [sub2apiProvider.id]: sub2apiProvider,
-  [deepseekProvider.id]: deepseekProvider
+  [deepseekProvider.id]: deepseekProvider,
+  [volcarkProvider.id]: volcarkProvider
 }
 
 export type { BalanceProvider }

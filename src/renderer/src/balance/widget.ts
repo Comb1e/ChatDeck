@@ -14,6 +14,7 @@ import type {
   BalanceSiteState,
   BalanceSnapshot
 } from '@shared/balance'
+import { formatBalance } from '@shared/balance'
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
 
@@ -50,8 +51,6 @@ const els = {
 }
 
 const DEFAULT_ICON = 'openai'
-/** 各币种显示符号；未知币种按 USD 处理 */
-const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', CNY: '¥' }
 const SIZE = {
   collapsedWindow: { w: 196, h: 56 },
   cardWidth: 372
@@ -84,9 +83,9 @@ function iconById(id: string): BrandIcon {
   )
 }
 
-function money(balance: number | null, currency: string): string {
-  const sym = CURRENCY_SYMBOLS[currency] || CURRENCY_SYMBOLS.USD
-  return `${sym}${Number(balance).toFixed(2)}`
+/** 无数据时的占位(货币站点 '$ --',百分比站点 '--') */
+function placeholder(currency: string): string {
+  return currency === 'PCT' ? '--' : '$ --'
 }
 
 function timeOf(iso: string | null): string {
@@ -95,12 +94,12 @@ function timeOf(iso: string | null): string {
 }
 
 function pillParts(s: BalanceSiteState): { text: string; cls: string; dot: string } {
-  let text = lastGood.get(s.id) || '$ --'
+  let text = lastGood.get(s.id) || placeholder(s.currency)
   let cls = ''
   let dot = ''
   switch (s.status) {
     case 'ok':
-      text = money(s.balance, s.currency)
+      text = formatBalance(s.balance, s.currency)
       lastGood.set(s.id, text)
       break
     case 'loading':
@@ -108,11 +107,11 @@ function pillParts(s: BalanceSiteState): { text: string; cls: string; dot: strin
       break
     case 'no-token':
     case 'disabled':
-      text = '$ --'
+      text = placeholder(s.currency)
       cls = 'muted'
       break
     case 'auth-error':
-      text = '$ --'
+      text = placeholder(s.currency)
       cls = 'bad'
       dot = 'bad'
       break
@@ -137,7 +136,12 @@ function renderPill(sites: BalanceSiteState[]): void {
       const { text, cls, dot } = pillParts(s)
       const g = document.createElement('div')
       g.className = 'site-group'
-      g.title = s.label
+      // 百分比站点的胶囊值不带"已用"字样,悬停说明补全语义
+      g.title =
+        s.currency === 'PCT' && s.status === 'ok'
+          ? `${s.label} · 五小时额度已用 ${Math.round(s.balance ?? 0)}%` +
+            (s.message ? `,${timeOf(s.message)} 重置` : '')
+          : s.label
       g.innerHTML =
         `<svg class="logo${s.status === 'loading' ? ' spin' : ''}" viewBox="0 0 24 24" aria-hidden="true"><path fill="#D97757" d="${iconById(s.icon).d}"/></svg>` +
         `<span class="site-name">${escapeHtml(s.label)}</span>` +
@@ -154,8 +158,14 @@ function renderPill(sites: BalanceSiteState[]): void {
 
 function rowSub(s: BalanceSiteState): string {
   switch (s.status) {
-    case 'ok':
+    case 'ok': {
+      // 火山方舟等百分比站点:主值已是百分比,补充"已用"语义与重置时间(message 存 ISO)
+      if (s.currency === 'PCT') {
+        const reset = s.message ? ` · ${timeOf(s.message)} 重置` : ''
+        return `五小时额度已用 ${Math.round(s.balance ?? 0)}%${reset}`
+      }
       return s.lastSuccessAt ? `更新于 ${timeOf(s.lastSuccessAt)}` : ''
+    }
     case 'loading':
       return '刷新中…'
     case 'no-token':
@@ -174,14 +184,17 @@ function renderList(sites: BalanceSiteState[]): void {
   const okSites = sites.filter((s) => s.status === 'ok')
   const enabledCount = sites.filter((s) => s.enabled).length
 
-  // 合计仅在币种一致时有意义:混合币种(CNY+USD)直接相加是错的,此时隐藏合计
-  const currencies = new Set(okSites.map((s) => s.currency || 'USD'))
-  els.totalBlock.hidden = okSites.length === 0 || currencies.size > 1
+  // 合计仅对货币站点有意义:混合币种(CNY+USD)直接相加是错的,百分比额度(火山方舟)相加更无意义,均不参与
+  const moneySites = okSites.filter((s) => s.currency !== 'PCT')
+  const currencies = new Set(moneySites.map((s) => s.currency || 'USD'))
+  els.totalBlock.hidden = moneySites.length === 0 || currencies.size > 1
   if (!els.totalBlock.hidden) {
-    const currency = okSites[0].currency || 'USD'
-    const total = okSites.reduce((sum, s) => sum + Number(s.balance || 0), 0)
-    els.totalValue.textContent = money(total, currency)
-    els.totalValue.title = okSites.map((s) => `${s.label} ${money(s.balance, s.currency)}`).join('\n')
+    const currency = moneySites[0].currency || 'USD'
+    const total = moneySites.reduce((sum, s) => sum + Number(s.balance || 0), 0)
+    els.totalValue.textContent = formatBalance(total, currency)
+    els.totalValue.title = moneySites
+      .map((s) => `${s.label} ${formatBalance(s.balance, s.currency)}`)
+      .join('\n')
   }
   els.emptyHint.hidden = sites.length > 0
   els.btnAddBottom.hidden = false

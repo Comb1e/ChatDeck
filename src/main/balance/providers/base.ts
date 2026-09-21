@@ -74,13 +74,17 @@ export function shapeOf(v: unknown, depth = 0): unknown {
 
 export async function requestJson(url: string, opts: RequestOptions = {}): Promise<JsonResponse> {
   const { method = 'GET', headers = {}, body, timeoutMs = DEFAULT_TIMEOUT_MS } = opts
+  // 调用方自带 content-type 时不得再注入默认值——volcark 的 SigV4 对 content-type 签名,
+  // 双份合并后服务端收到的值与签名不一致必然 SignatureDoesNotMatch
+  const hasContentType = Object.keys(headers).some((k) => k.toLowerCase() === 'content-type')
+  const merged = hasContentType ? { ...headers } : { 'Content-Type': 'application/json', ...headers }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   let res: Response
   try {
     res = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json', ...headers },
+      headers: merged,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller.signal
     })
@@ -109,6 +113,11 @@ export interface BalanceQueryContext {
 export interface BalanceResult {
   balance: number
   currency?: string
+  /**
+   * 成功态的补充说明(原样进入站点状态 message,渲染层在 ok 态展示)。
+   * 如 volcark 传"额度重置时间"的 ISO 串。
+   */
+  note?: string
 }
 
 export interface BalanceProvider {

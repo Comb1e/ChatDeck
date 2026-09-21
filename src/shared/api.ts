@@ -101,6 +101,8 @@ export interface DeckApi {
     saveSite(input: BalanceSiteInput): Promise<BalanceSaveResult>
     removeSite(id: string): Promise<{ ok: boolean }>
     refreshNow(): Promise<BalanceRefreshResult>
+    /** 打开/关闭余额小窗;传 'show' 则只打开(幂等,设置窗口入口用) */
+    toggle(mode?: 'show'): void
     /** 打开站点的 Usage 页(系统浏览器) */
     openUsage(siteId: string): void
     /** 渲染层按内容测量的窗口尺寸 */

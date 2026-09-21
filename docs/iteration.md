@@ -1,5 +1,37 @@
 # 迭代记录
 
+## v0.6.0（2026-09-21）
+
+新功能（用户需求）：余额监控新增**火山方舟 Coding Plan** 站点类型，显示每五小时（session 窗口）额度；并补上余额监控的**显性入口**（用户反馈：此前只能靠托盘勾选打开，悬浮窗/设置窗口里没有入口）。
+
+### 上版问题
+
+- 余额监控只有 sub2api 网关与 DeepSeek 官方两类适配器；用户订阅了火山方舟编码计划（console.volcengine.com/ark），希望在小窗里看到每五小时额度。
+- 入口可发现性差：打开余额小窗的唯一路径是托盘右键勾选「余额监控」，悬浮窗头部与设置窗口均无入口（用户实测反馈"没有进入余额监控设置的入口"）。
+
+### 方法（根因）
+
+- **协议调研**（无官方 SDK 文档，以两个开源实现交叉核实：dsh-ark-quota、ArkBar）：`POST https://open.volcengineapi.com/?Action=GetCodingPlanUsage&Version=2024-01-01`，空请求体；鉴权是火山引擎 SigV4 请求签名（service=ark、region=cn-beijing），凭据为「访问控制(IAM)→访问密钥」的 AK/SK——**不是**模型推理用的 Ark API Key；响应 `Result.QuotaUsage[]`（`Level: session/weekly/monthly`、`Percent` 已用比例、`ResetTimestamp` 秒），错误为 `ResponseMetadata.Error{Code,Message}` 信封。
+- **适配器** `providers/volcark.ts`：`signVolcRequest` 独立纯函数实现 SigV4（派生链 HMAC(SK→日期→region→service→"request")）；只取 `Level='session'`（即五小时会话窗口，缺失回退第一条）；额度以 `currency='PCT'` 流转，与货币站点天然互斥。凭据复用 `accessToken`=AccessKeyId、`refreshToken`=SecretAccessKey 字段（`BalanceTokenField.key` 联合类型不改 IPC 即可承载两枚密钥，界面文案引导区分）。
+- **PCT 显示适配**：`formatBalance` 抽到 `shared/balance.ts`（通知与渲染层共用一份，消除原 `money`/`fmtMoney` 双份实现）；胶囊值 `35%`、列表副行「五小时额度已用 X% · HH:MM 重置」（重置时间经 `BalanceResult.note` → 状态 `message` 流转，仅 ok 态展示）、悬停 tooltip 补"已用"语义；合计块排除 PCT 站点（百分比相加无意义）；`requestJson` 修复 content-type 合并策略（调用方自带时不注入默认值——SigV4 对 content-type 签名，双份合并必然 SignatureDoesNotMatch）。
+- **入口**（共用新 IPC `balance:toggle`，`mode='show'` 表示幂等打开）：悬浮窗头部钱包按钮（toggle）、设置窗口「余额监控」区块（只打开）；托盘勾选态经既有 `onVisibilityChanged` 继续同步。
+- 图标补 simple-icons 的字节跳动路径（CC0）。
+
+### 验证结果
+
+- `npm run typecheck` 三工程通过；**178/178** 单测通过（163 + volcark 14 + 调度器/注册表 +1）。
+- 签名独立对照：测试内按火山 SigV4 规范从零重推签名逐位一致；同输入签名确定、SK 变则变（反例）。
+- **真端点冒烟**（临时脚本，已删）：假凭据请求真实 `open.volcengineapi.com` → HTTP 401 + `InvalidAccessKey`，信封回显 `Action=GetCodingPlanUsage/Service=ark/Region=cn-beijing`——服务端成功解析路由请求且**签名格式被接受**（签名错误会返回 SignatureDoesNotMatch），仅假 AK 不存在。
+- dev 冒烟（临时钩子，已删，grep 临时=0）：注入假凭据 volcark 站点后真实拉取 → auth-error（预期），三个既有站点余额照常（SpacetimeAI 4.97USD / Sub2API 6.93USD / DeepSeek 7.52CNY，`requestJson` 改动无回归）；胶囊四行渲染正常。
+- 用户配置零污染：真实 `balance.user.json` 先备份再注入假站点，验证后恢复（3 站点原样）。
+
+### 遗留问题
+
+- 火山方舟仅接了 Coding Plan（GetCodingPlanUsage）；Agent Plan（GetAFPUsage，近5小时/周/月三窗口）未接，有订阅需求再加。
+- AK/SK 权限粒度未细分：IAM 密钥缺方舟只读权限时同样落入 auth-error，文案提示"检查 AK/SK 或权限"。
+- `ResetTimestamp` 服务端时区假定为 UTC 秒（按两个开源实现一致处理）；如遇重置时间偏差需再核对。
+- v0.5.0 遗留照旧（刷新间隔不暴露、凭据明文 JSON、小窗崩溃不自动重建等）；v0.4.0 遗留照旧。
+
 ## v0.5.0（2026-09-21）
 
 功能合并（用户需求）：把 token-balance 的余额监控合并进 ChatDeck——新增一个**独立**的余额小窗，与悬浮窗/鲸鱼形态系统无关，托盘右键菜单开关显隐。已确认：外观原样保留、现有站点与 token 一次性迁移、默认隐藏并记住上次状态。

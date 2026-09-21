@@ -136,28 +136,44 @@ whale/app.ts（编排:主循环/行为大脑/输入/接线）
 
 ## 余额监控（移植自 token-balance）
 
-独立小窗：收起态是一行一个站点的余额胶囊，展开为站点卡片（列表 / 编辑 / 添加 / 删除 / 刷新全部）。整条数据链路都在**主进程**（渲染层 CSP 不放行外网），与悬浮窗/鲸鱼的形态系统完全无关。
+独立小窗：收起态是一行一个站点的余额胶囊（底部有按币种的"已用"汇总行），展开为站点卡片（列表 / 编辑 / 添加 / 删除 / 刷新全部 / 账单）。整条数据链路都在**主进程**（渲染层 CSP 不放行外网），与悬浮窗/鲸鱼的形态系统完全无关。
 
 ### 数据流
 
 ```
-主进程 BalanceScheduler（实例；配置存储由 index.ts 注入）
+主进程 BalanceScheduler（实例；配置存储与用量台账由 index.ts 注入）
   ├─ 定时轮询（默认 5 分钟，1–60 钳制；改 interval 需重启；窗口隐藏也照常跑）
   ├─ 每站点 Promise.allSettled 并发 → 适配器 getBalance()
   │    ├─ sub2api 网关: GET <base>/auth/me（Bearer access_token）
   │    │     401 → POST <base>/auth/refresh（refresh_token 会轮换，新值写回该站点）→ 重试一次
+  │    │     另拉 GET <base>/usage/dashboard/stats → total_actual_cost（站点记账的累计已用,失败静默）
   │    ├─ DeepSeek 官方: GET <base>/user/balance（Bearer API Key；币种随响应返回 CNY/USD）
   │    └─ 火山方舟 Coding Plan: POST open.volcengineapi.com/?Action=GetCodingPlanUsage&Version=2024-01-01
   │          （火山 SigV4 请求签名，service=ark / region=cn-beijing；凭据是 IAM 访问密钥 AK/SK，
   │           不是推理用的 Ark API Key。响应 Result.QuotaUsage[] 取 Level='session'——即五小时
   │           会话窗口，Percent 为已用比例，currency='PCT' 显示为整数百分比+重置时间）
-  ├─ 状态快照 → ① pushState → 余额小窗渲染层（ev:balance-state）
+  ├─ 成功观测 → UsageStore.apply（本机计量:余额下降量记到当日;上升=充值不计;PCT 不进台账）
+  │             站点记账(apiUsed)与本机计量(meterTotal)都在台账,优先展示 api 口径
+  ├─ 状态快照(含 used/usedSource) → ① pushState → 余额小窗渲染层（ev:balance-state）
   │             ② BalanceNotifier：仅状态切换沿发系统通知（Token 失效 / 余额恢复）
   └─ 保存站点：先落盘再立即实测验证（验证失败也保留配置，列表里显示错误态）
 ```
 
+### 账单（`balance/billing.ts` + `billing-window.ts` + billing.html 入口）
+
+「已用」与账单窗口是两条口径（`UsageStore`，台账持久化在 `userData/balance.usage.json`，与用户配置分文件——它是派生数据，清掉即重新计量）：
+
+- **api 口径（站点记账）**：sub2api 网关自带记账，`total_actual_cost` 就是真实累计已用（实测对账：余额+已用 = 累计充值+赠送额度；逐日 trend 求和 == total_actual_cost）。账单窗口打开时现场拉 `GET <base>/usage/dashboard/trend?start_date&end_date`（近 6 个自然月，逐日 actual_cost）按月聚合。
+- **metered 口径（本机计量）**：DeepSeek 无用量接口，按"余额下降量"估算——每次成功观测，比上次低多少记多少（记到当日）；余额上升视为充值不计（充值期间的消耗无法追溯）；币种变化重开台账。统计自首次观测，账单里明确标注"本机计量"。
+- **PCT（火山方舟）**：百分比额度站点不进台账、不进合计、账单 excluded 列表说明。
+
+账单窗口是第六个渲染入口（billing.html），固定 460×620 无边框透明卡片、关闭即销毁；数据 `balance:billing-get` 现拉现算（可能耗时数秒）。入口三处：卡片操作区「账单」按钮、胶囊"已用"行（点击即开）、设置窗口「账单明细」。
+
+**Usage 页在悬浮窗内打开**（不再调系统浏览器）：`balance:open-usage` → 已有同源站点直接把该视图导航到 Usage 地址（登录态共享、不加标签）；没有则落一个「<站点名> Usage」厂商（桌面 UA；独立持久分区，登录一次长期有效，可在设置删除）→ `forms.expandFloat()` 展开悬浮窗 → `ev:f-usage-open` 通知渲染层补拉 provider 列表后 navigate+activate。ViewManager 为此新增 `navigate(id, url)`（按视图状态机走合法转移后换页）。
+
 入口四处：托盘右键「余额监控」勾选、**胶囊右缘的展开按钮**（进入站点管理卡片）、悬浮窗头部钱包按钮（toggle）、设置窗口「余额监控」区块（只打开）；后两者走 `balance:toggle` IPC（悬浮窗头部与设置窗口共用），勾选态经 `onVisibilityChanged` 同步回托盘。
-坑：`#pill` 本体是 `-webkit-app-region: drag` 拖拽区（拖动移动窗口用），拖拽区会**吞掉一切鼠标事件**——胶囊本体上挂的 click/contextmenu 永远不触发（"点击/右键胶囊展开"从未生效过），展开必须走 `#pillExpand`（no-drag 实体按钮）。另有 `[hidden]{display:none!important}` 兜底：author display 规则会压掉 hidden 属性的 UA 样式。
+坑：`#pill` 本体是 `-webkit-app-region: drag` 拖拽区（拖动移动窗口用），拖拽区会**吞掉一切鼠标事件**——胶囊本体上挂的 click/contextmenu 永远不触发（"点击/右键胶囊展开"从未生效过），展开必须走 `#pillExpand`（no-drag 实体按钮）；"已用"行同理是 no-drag 按钮。另有 `[hidden]{display:none!important}` 兜底：author display 规则会压掉 hidden 属性的 UA 样式。
+坑二：渲染层的站点描述表（`descriptions`）只在窗口创建时拉一次——保存/删除站点后必须重新 `describeSites()`，否则新站点的 Usage 按钮（`desc?.usageUrl` 为空不发起）与编辑表单（字段全空）都是坏的；Usage 按钮已改为无条件发起、由主进程校验兜底。
 
 ### 每站点状态机（`balance/scheduler.ts`，互不影响）
 
@@ -284,15 +300,16 @@ scripts/              开发期工具（make-icon.mjs 生成应用/托盘图标�
 build/                打包资源（icon.ico，electron-builder 默认 buildResources 目录）
 src/shared/           前后端共享：类型、IPC 常量、纯函数（merge/viewState/prompts/floatLayout/translate/balance）、鲸鱼配置、API 接口
 src/main/             主进程：floatWindow、whaleWindow、settingsWindow、translateWindow、translateService、textCapture、tray、ViewManager、IPC、两个 store
-src/main/balance/     余额监控主进程：store（配置读写/迁移）、providers/*（sub2api/DeepSeek/火山方舟适配器 + 注册表）、scheduler（轮询 + 每站点状态机）、notify（状态切换沿通知）、window（小窗控制器）
+src/main/balance/     余额监控主进程：store（配置读写/迁移）、providers/*（sub2api/DeepSeek/火山方舟适配器 + 注册表）、scheduler（轮询 + 每站点状态机 + 用量观测挂钩）、usage（用量台账:站点记账+本机计量）、billing（账单报告构建）、billing-window（账单窗口）、notify（状态切换沿通知）、window（小窗控制器）
 src/preload/          contextBridge：index.ts（主 API，五个渲染层共用）、error.ts（错误页重试）
-src/renderer/         界面：whale.html（鲸鱼）+ float.html（悬浮窗）+ balance.html（余额小窗）+ settings.html（设置窗口）+ translate.html（译文弹窗）
+src/renderer/         界面：whale.html（鲸鱼）+ float.html（悬浮窗）+ balance.html（余额小窗）+ billing.html（账单窗口）+ settings.html（设置窗口）+ translate.html（译文弹窗）
 src/renderer/src/whale/     鲸鱼渲染层：app/states/whale/particles/runtime/tween/fsm/context/badge（纯 TS,无 Vue）
-src/renderer/src/balance/   余额小窗渲染层：widget（胶囊/列表/编辑卡片）、icons（品牌图标路径）、style.css（原样移植,纯 TS,无 Vue）
+src/renderer/src/balance/   余额小窗渲染层：widget（胶囊/列表/编辑卡片/已用汇总）、icons（品牌图标路径）、style.css（原样移植,纯 TS,无 Vue）
+src/renderer/src/billing/   账单窗口渲染层：main.ts（报告渲染:汇总/站点分区/月度条形）+ style.css（与余额小窗同风格）
 src/renderer/src/float/     悬浮窗渲染层：floatStore + FloatApp/FloatHeader/FloatPrompts
 src/renderer/src/settings/  设置窗口渲染层：SettingsApp（标签页壳,复用 components/ 下面板）
 src/renderer/src/translate/ 译文弹窗渲染层：TranslatePopup
-tests/                Vitest 单测（shared 纯函数 + 主进程 store/ViewManager + 鲸鱼 runtime 与行为状态机移植套件 + 余额适配器与调度器移植套件，163 个用例）
+tests/                Vitest 单测（shared 纯函数 + 主进程 store/ViewManager + 鲸鱼 runtime 与行为状态机移植套件 + 余额适配器/调度器/用量与账单套件，200 个用例）
 ```
 
 ## 打包与分发（electron-builder）
@@ -303,7 +320,7 @@ tests/                Vitest 单测（shared 纯函数 + 主进程 store/ViewMan
 app.asar（out/** 打包）        安装目录/resources/（extraResources 平铺）
 ├─ out/main/index.js           ├─ providers.default.json   ← resourceFile() 读这里
 ├─ out/preload/{index,error}.js ├─ prompts.default.json       (process.resourcesPath)
-└─ out/renderer/{whale,float,balance,settings,translate}.html
+└─ out/renderer/{whale,float,balance,billing,settings,translate}.html
                                └─ error.html            ← viewManager.errorPagePath()
                                   └─ tray.png / tray@2x.png ← tray.ts 读这里
                                   └─ balance-icon.png      ← 余额通知图标

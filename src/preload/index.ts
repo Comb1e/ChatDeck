@@ -9,7 +9,8 @@ import type {
   BalanceSiteDescriptionList,
   BalanceSiteInput,
   BalanceSiteTypeInfo,
-  BalanceSnapshot
+  BalanceSnapshot,
+  BillingReport
 } from '@shared/balance'
 import type { TranslateConfig, TranslatePairId, TranslatePopupState } from '@shared/translate'
 
@@ -36,6 +37,8 @@ const api: DeckApi = {
     reload: (id: string): void => ipcRenderer.send(IPC.FViewReload, id),
     back: (id: string): void => ipcRenderer.send(IPC.FViewBack, id),
     forward: (id: string): void => ipcRenderer.send(IPC.FViewForward, id),
+    navigate: (id: string, url: string) =>
+      ipcRenderer.invoke(IPC.FViewNavigate, { id, url }) as Promise<boolean>,
     paste: () => ipcRenderer.invoke(IPC.FViewPaste) as Promise<boolean>
   },
   float: {
@@ -77,6 +80,9 @@ const api: DeckApi = {
     refreshNow: () =>
       ipcRenderer.invoke(IPC.BalanceRefresh) as Promise<BalanceRefreshResult>,
     toggle: (mode?: 'show'): void => ipcRenderer.send(IPC.BalanceToggle, mode),
+    openBilling: (): void => ipcRenderer.send(IPC.BalanceBillingOpen),
+    getBillingReport: () => ipcRenderer.invoke(IPC.BalanceBillingGet) as Promise<BillingReport>,
+    closeBilling: (): void => ipcRenderer.send(IPC.BalanceBillingClose),
     openUsage: (siteId: string): void => ipcRenderer.send(IPC.BalanceOpenUsage, siteId),
     resize: (width: number, height: number): void =>
       ipcRenderer.send(IPC.BalanceResize, { width, height })
@@ -103,6 +109,9 @@ const api: DeckApi = {
     },
     loadStateChanged: (cb): void => {
       ipcRenderer.on(IPC.EvFLoadStateChanged, (_e, payload) => cb(payload))
+    },
+    usageOpen: (cb: (e: { id: string; url: string }) => void): void => {
+      ipcRenderer.on(IPC.EvFUsageOpen, (_e, payload) => cb(payload))
     }
   },
   onWhale: {

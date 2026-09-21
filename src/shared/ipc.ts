@@ -16,6 +16,8 @@ export const IPC = {
   FViewReload: 'fview:reload',
   FViewBack: 'fview:back',
   FViewForward: 'fview:forward',
+  /** 把站点视图导航到指定地址(余额站点的 Usage 页在悬浮窗内打开) */
+  FViewNavigate: 'fview:navigate',
   /** 无参:粘贴到悬浮窗当前活动站点(提示词面板等跨窗口使用) */
   FViewPaste: 'fview:paste',
 
@@ -57,6 +59,12 @@ export const IPC = {
   BalanceOpenUsage: 'balance:open-usage',
   /** 打开/关闭余额小窗(悬浮窗头部与设置窗口的入口;托盘勾选态跟随) */
   BalanceToggle: 'balance:toggle',
+  /** 打开独立账单窗口(余额卡片/胶囊已用行/设置窗口的入口) */
+  BalanceBillingOpen: 'balance:billing-open',
+  /** 拉取账单报告(现拉现算:sub2api 现场请求用量趋势,可能耗时数秒) */
+  BalanceBillingGet: 'balance:billing-get',
+  /** 关闭账单窗口(窗口内 Esc/关闭按钮) */
+  BalanceBillingClose: 'balance:billing-close',
   /** 渲染层按内容测量的窗口尺寸(主进程按工作区钳制) */
   BalanceResize: 'balance:resize',
 
@@ -78,6 +86,8 @@ export const IPC = {
   EvWhaleUnread: 'ev:whale-unread',
   // 主进程 → 余额小窗事件
   EvBalanceState: 'ev:balance-state',
+  // 主进程 → 悬浮窗:打开余额站点的 Usage 页(先导航视图,再激活对应窗格)
+  EvFUsageOpen: 'ev:f-usage-open',
   // 译文弹窗事件(只发给弹窗 webContents)
   EvTranslateResult: 'ev:translate-result'
 } as const

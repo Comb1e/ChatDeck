@@ -132,6 +132,35 @@ body { padding: 6px; }
 .dot.bad     { background: var(--accent-deep); }
 @keyframes pulse { 50% { opacity: 0.25; } }
 
+/* 刷新中的闪烁反馈:站点值随加载呼吸(配合 logo 自旋,让"点了刷新"可见) */
+@keyframes refreshBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.site-group.loading .site-value,
+.site-row.loading .row-value {
+  animation: refreshBlink 1s ease-in-out infinite;
+}
+
+/* 胶囊底部"已用"汇总(按币种);#pill 是拖拽区,可点必须 no-drag */
+.pill-used {
+  -webkit-app-region: no-drag;
+  display: block;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 3px 16px 6px;
+  font-family: var(--sans);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pill-used:hover { color: var(--accent-deep); }
+
 /* ---------- 展开态卡片 ---------- */
 
 #card {
@@ -185,6 +214,19 @@ section { padding: 2px 16px 14px; }
   font-size: 11.5px;
   color: var(--ink-soft);
   letter-spacing: 0.4px;
+}
+
+/* 合计:按币种一行"余额 … · 已用 …"(混合币种各自成行,百分比站点不参与) */
+#totalBlock { padding-bottom: 4px; }
+
+.total-line {
+  font-family: var(--serif);
+  font-size: 19px;
+  line-height: 1.5;
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .balance-value {

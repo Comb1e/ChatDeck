@@ -60,6 +60,15 @@ export const useFloatStore = defineStore('float', {
       window.api.onF.loadStateChanged((e) => {
         this.loadStates[e.id] = e.state as ViewLoadState
       })
+      // 余额站点的 Usage 页在悬浮窗内打开:Usage 厂商可能是刚落的,先补拉列表
+      // 再导航视图(加载 Usage 地址),最后激活对应窗格
+      window.api.onF.usageOpen((e) => {
+        void (async () => {
+          await providersStore.load()
+          await window.api.fview.navigate(e.id, e.url)
+          this.activate(e.id)
+        })()
+      })
       // 未读站点数推送:鲸鱼形态下头顶气泡由此驱动(渲染层隐藏时仍照常计数)
       providersStore.$subscribe(() => {
         window.api.float.pushUnread(providersStore.unread.length)

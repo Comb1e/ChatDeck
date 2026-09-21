@@ -23,16 +23,18 @@ const els = {
   pill: $('pill'),
   pillGroups: $('pillGroups'),
   pillExpand: $<HTMLButtonElement>('pillExpand'),
+  pillUsed: $<HTMLButtonElement>('pillUsed'),
   card: $('card'),
   cardTitle: $('cardTitle'),
   btnAdd: $('btnAdd'),
   btnCollapse: $('btnCollapse'),
   listView: $('listView'),
   totalBlock: $('totalBlock'),
-  totalValue: $('totalValue'),
+  totalRows: $('totalRows'),
   emptyHint: $('emptyHint'),
   siteRows: $('siteRows'),
   btnRefreshAll: $('btnRefreshAll'),
+  btnBilling: $('btnBilling'),
   btnAddBottom: $('btnAddBottom'),
   editView: $('editView'),
   editTitle: $('editTitle'),
@@ -136,7 +138,8 @@ function renderPill(sites: BalanceSiteState[]): void {
     for (const s of visible) {
       const { text, cls, dot } = pillParts(s)
       const g = document.createElement('div')
-      g.className = 'site-group'
+      // 刷新中整组加 loading:值文字走闪烁动画,让"点了刷新"有可见反馈
+      g.className = `site-group${s.status === 'loading' ? ' loading' : ''}`
       // 百分比站点的胶囊值不带"已用"字样,悬停说明补全语义
       g.title =
         s.currency === 'PCT' && s.status === 'ok'
@@ -151,8 +154,30 @@ function renderPill(sites: BalanceSiteState[]): void {
       els.pillGroups.appendChild(g)
     }
   }
+  renderPillUsed(visible)
   // 单行保持胶囊形,多行切大圆角卡片形
   els.pill.style.borderRadius = els.pillGroups.children.length > 1 ? '18px' : '999px'
+}
+
+/**
+ * 胶囊底部的"已用"汇总行:按币种分开累计(不同币种直接相加是错的),
+ * 只算货币站点(火山方舟等百分比额度站点 excluded),点它打开账单窗口。
+ */
+function renderPillUsed(sites: BalanceSiteState[]): void {
+  const usedByCurrency = new Map<string, number>()
+  let known = false
+  for (const s of sites) {
+    if (s.status !== 'ok' || s.currency === 'PCT' || s.used == null) continue
+    known = true
+    const cur = s.currency || 'USD'
+    usedByCurrency.set(cur, (usedByCurrency.get(cur) ?? 0) + s.used)
+  }
+  els.pillUsed.hidden = !known
+  if (known) {
+    els.pillUsed.textContent =
+      '已用 ' +
+      [...usedByCurrency.entries()].map(([cur, v]) => formatBalance(v, cur)).join(' · ')
+  }
 }
 
 // ---------- 渲染:站点列表 ----------
@@ -185,17 +210,31 @@ function renderList(sites: BalanceSiteState[]): void {
   const okSites = sites.filter((s) => s.status === 'ok')
   const enabledCount = sites.filter((s) => s.enabled).length
 
-  // 合计仅对货币站点有意义:混合币种(CNY+USD)直接相加是错的,百分比额度(火山方舟)相加更无意义,均不参与
-  const moneySites = okSites.filter((s) => s.currency !== 'PCT')
-  const currencies = new Set(moneySites.map((s) => s.currency || 'USD'))
-  els.totalBlock.hidden = moneySites.length === 0 || currencies.size > 1
+  // 合计按币种分行为(不同币种直接相加是错的,混合币种此前整个隐藏也看不到数了):
+  // 每个货币一行"余额 … · 已用 …";百分比额度站点(火山方舟)不参与
+  const byCurrency = new Map<string, BalanceSiteState[]>()
+  for (const s of okSites) {
+    if (s.currency === 'PCT') continue
+    const cur = s.currency || 'USD'
+    const list = byCurrency.get(cur) ?? []
+    list.push(s)
+    byCurrency.set(cur, list)
+  }
+  els.totalBlock.hidden = byCurrency.size === 0
   if (!els.totalBlock.hidden) {
-    const currency = moneySites[0].currency || 'USD'
-    const total = moneySites.reduce((sum, s) => sum + Number(s.balance || 0), 0)
-    els.totalValue.textContent = formatBalance(total, currency)
-    els.totalValue.title = moneySites
-      .map((s) => `${s.label} ${formatBalance(s.balance, s.currency)}`)
-      .join('\n')
+    els.totalRows.innerHTML = ''
+    for (const [cur, list] of byCurrency) {
+      const total = list.reduce((sum, s) => sum + Number(s.balance || 0), 0)
+      const usedList = list.filter((s) => s.used != null)
+      const used = usedList.reduce((sum, s) => sum + Number(s.used), 0)
+      const line = document.createElement('div')
+      line.className = 'total-line'
+      line.textContent =
+        `${cur} 余额 ${formatBalance(total, cur)}` +
+        (usedList.length ? ` · 已用 ${formatBalance(used, cur)}` : '')
+      line.title = list.map((s) => `${s.label} ${formatBalance(s.balance, s.currency)}`).join('\n')
+      els.totalRows.appendChild(line)
+    }
   }
   els.emptyHint.hidden = sites.length > 0
   els.btnAddBottom.hidden = false
@@ -208,9 +247,9 @@ function renderList(sites: BalanceSiteState[]): void {
     }
     const { text, cls, dot } = pillParts(s)
     const sub = rowSub(s)
-    const desc = descriptions.get(s.id)
     const row = document.createElement('div')
-    row.className = 'site-row'
+    // 刷新中整行加 loading:值文字走闪烁动画,让"点了刷新"有可见反馈
+    row.className = `site-row${s.status === 'loading' ? ' loading' : ''}`
     row.title = `点击编辑「${s.label}」`
     row.innerHTML =
       `<svg class="row-icon${s.status === 'loading' ? ' spin' : ''}" viewBox="0 0 24 24" aria-hidden="true"><path fill="#D97757" d="${iconById(s.icon).d}"/></svg>` +
@@ -220,9 +259,10 @@ function renderList(sites: BalanceSiteState[]): void {
       `<button class="row-link" title="打开 Usage 页" aria-label="打开 ${escapeHtml(s.label)} Usage 页">` +
       `<svg viewBox="0 0 24 24"><path fill="currentColor" d="M14 3h7v7h-2V6.4l-9.3 9.3-1.4-1.4L17.6 5H14V3zM5 5h6v2H7v10h10v-4h2v6H5V5z"/></svg></button></div>`
     const link = row.querySelector('.row-link')
+    // 不在渲染层判 desc?.usageUrl——描述表可能还没刷新,主进程侧会校验并忽略空地址
     link?.addEventListener('click', (e) => {
       e.stopPropagation()
-      if (desc?.usageUrl) api.openUsage(s.id)
+      api.openUsage(s.id)
     })
     row.addEventListener('click', () => openEdit(s.id))
     els.siteRows.appendChild(row)
@@ -412,6 +452,9 @@ async function saveEditing(): Promise<void> {
   els.btnDelete.hidden = false
   els.editMsg.className = 'setup-msg success'
   els.editMsg.textContent = '已保存'
+  // 描述表只在启动时拉过一次:新保存的站点(usage页/表单字段)必须补拉,
+  // 否则它的 Usage 按钮与编辑表单会一直拿到空描述(火山方舟按钮失灵的根因)
+  void refreshDescriptions()
   setTimeout(() => {
     view = 'list'
     showView()
@@ -432,6 +475,7 @@ async function deleteEditing(): Promise<void> {
   els.btnDelete.dataset.confirm = ''
   els.btnDelete.textContent = '删除站点'
   await api.removeSite(editing.id)
+  void refreshDescriptions() // 描述表同步删除,避免残留可点开的死条目
   view = 'list'
   showView()
 }
@@ -518,6 +562,14 @@ els.btnAddBottom.addEventListener('click', openAdd)
 els.btnRefreshAll.addEventListener('click', () => {
   void api.refreshNow().catch(() => {})
 })
+// 账单明细入口:卡片按钮与胶囊"已用"行都打开同一个账单窗口
+els.btnBilling.addEventListener('click', () => {
+  api.openBilling()
+})
+els.pillUsed.addEventListener('click', (e) => {
+  e.stopPropagation() // 别触发 #pill 的展开
+  api.openBilling()
+})
 els.btnSave.addEventListener('click', () => {
   void saveEditing()
 })
@@ -541,11 +593,15 @@ window.addEventListener('keydown', (e) => {
 
 // ---------- 启动 ----------
 
-async function init(): Promise<void> {
+async function refreshDescriptions(): Promise<void> {
   const desc = await api.describeSites()
   descriptions = new Map(
     desc.sites.filter((d) => d.id).map((d) => [d.id as string, d] as [string, BalanceSiteDescription])
   )
+}
+
+async function init(): Promise<void> {
+  await refreshDescriptions()
   render(await api.getState())
   window.api.onBalance.state(render)
   const unconfigured = state.sites.filter((s) => s.enabled && s.status === 'no-token')

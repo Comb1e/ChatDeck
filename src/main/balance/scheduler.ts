@@ -19,11 +19,13 @@ import type {
   BalanceSite,
   BalanceSiteInput,
   BalanceSiteState,
-  BalanceSnapshot
+  BalanceSnapshot,
+  BalanceUsedSource
 } from '@shared/balance'
 import { getAdapter } from './providers'
 import type { BalanceProvider } from './providers'
 import type { BalanceStore } from './store'
+import { dayKey, type UsageStore } from './usage'
 
 const STATUS_BY_KIND: Record<string, BalanceSiteState['status']> = {
   setup: 'no-token',
@@ -42,7 +44,10 @@ export class BalanceScheduler {
   private timer: ReturnType<typeof setInterval> | null = null
   private onStateChange: ((snapshot: BalanceSnapshot) => void) | null = null
 
-  constructor(private readonly store: BalanceStore) {}
+  constructor(
+    private readonly store: BalanceStore,
+    private readonly usage: UsageStore
+  ) {}
 
   snapshot(): BalanceSnapshot {
     return JSON.parse(JSON.stringify(this.state)) as BalanceSnapshot
@@ -83,11 +88,38 @@ export class BalanceScheduler {
     }
 
     try {
-      const { balance, currency, note } = await adapter.getBalance({ site, onTokensRefreshed })
+      const { balance, currency, note, used } = await adapter.getBalance({ site, onTokensRefreshed })
+      const cur = currency || adapter.balanceUnit || 'USD'
+      // 站点"已用"口径:优先站点记账(api),否则回退本机计量(余额下降累计);百分比额度站点不参与
+      let usedValue: number | null = null
+      let usedSource: BalanceUsedSource | null = null
+      if (cur !== 'PCT') {
+        if (typeof used === 'number' && Number.isFinite(used)) {
+          this.usage.recordApiUsed(site.id, cur, used, nowIso())
+          usedValue = used
+          usedSource = 'api'
+        } else {
+          const lastApi = this.usage.get(site.id)
+          if (lastApi?.apiUsed != null && lastApi.apiUsedCurrency === cur) {
+            usedValue = lastApi.apiUsed
+            usedSource = 'api'
+          }
+        }
+        if (usedValue === null) {
+          const obs = this.usage.apply(site.id, cur, balance, dayKey(new Date()))
+          usedValue = obs.record.meterTotal
+          usedSource = obs.record.meterSince ? 'metered' : null
+        } else {
+          // 有站点记账时本机计量照常累积(站点接口失效时的后备),只是不用于展示
+          this.usage.apply(site.id, cur, balance, dayKey(new Date()))
+        }
+      }
       this.replaceSiteState(site.id, {
         status: 'ok',
         balance,
-        currency: currency || adapter.balanceUnit || 'USD',
+        currency: cur,
+        used: usedValue,
+        usedSource,
         // note 为成功态补充说明(如 volcark 的额度重置时间),ok 态由渲染层展示
         message: note ?? null,
         updatedAt: nowIso(),
@@ -147,6 +179,8 @@ export class BalanceScheduler {
         balance: null,
         // 首次成功前错误占位也要按适配器单位显示(如 volcark 的 '--' 而非 '$ --')
         currency: getAdapter(site.type)?.balanceUnit || 'USD',
+        used: null,
+        usedSource: null,
         message: null,
         updatedAt: null,
         lastSuccessAt: null
@@ -178,6 +212,7 @@ export class BalanceScheduler {
 
   async removeSite(id: string): Promise<{ ok: boolean }> {
     this.store.removeSite(id)
+    this.usage.remove(id) // 台账跟着站点一起删,不留孤儿数据
     await this.tick()
     return { ok: true }
   }

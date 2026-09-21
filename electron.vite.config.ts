@@ -50,12 +50,14 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
-        // 多 HTML 入口:settings.html=设置窗口,float.html=悬浮窗,translate.html=译文弹窗
+        // 多 HTML 入口:settings.html=设置窗口,float.html=悬浮窗,whale.html=鲸鱼,
+        // balance.html=余额小窗,billing.html=账单窗口,translate.html=译文弹窗
         input: {
           settings: resolve('src/renderer/settings.html'),
           float: resolve('src/renderer/float.html'),
           whale: resolve('src/renderer/whale.html'),
           balance: resolve('src/renderer/balance.html'),
+          billing: resolve('src/renderer/billing.html'),
           translate: resolve('src/renderer/translate.html')
         }
       }

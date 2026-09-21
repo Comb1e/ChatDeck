@@ -22,7 +22,8 @@ export interface ViewManagerHooks {
   onLoadStateChanged(id: string, state: ViewLoadState): void
 }
 
-const DEFAULT_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`
+/** 桌面 UA(主进程为新建厂商选 UA 时用,如余额站点的 Usage 页) */
+export const DEFAULT_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`
 /** 窄窗口场景(悬浮窗)的移动端 UA:站点给出适配小屏的布局 */
 export const MOBILE_UA = `Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Mobile Safari/537.36`
 
@@ -118,6 +119,29 @@ export class ViewManager {
         /* 失败由 did-fail-load 统一处理 */
       })
     }
+  }
+
+  /**
+   * 把已注册站点的视图导航到指定地址（余额站点的 Usage 页等）。
+   * 无视图则按 provider 创建并直载目标地址；有视图按状态机走合法转移后换页。
+   */
+  navigate(id: string, url: string): void {
+    const existing = this.views.get(id)
+    if (!existing) {
+      const provider = this.providerOf(id)
+      if (!provider) return
+      this.createView(provider, url) // attach → loading,直载目标地址
+      return
+    }
+    if (existing.state === 'idle') this.dispatch(existing, { type: 'attach' })
+    else if (existing.state === 'failed' || existing.state === 'crashed') {
+      this.dispatch(existing, { type: 'reload' })
+    }
+    existing.reported = 'loading'
+    this.hooks.onLoadStateChanged(id, existing.reported)
+    void existing.view.webContents.loadURL(url).catch(() => {
+      /* 失败由 did-fail-load 统一处理 */
+    })
   }
 
   back(id: string): void {

@@ -8,9 +8,13 @@
  * - access_token 过期时用 refresh_token 调 <base>/auth/refresh 续期,
  *   站点会轮换 refresh_token,必须把新值写回站点配置
  * - 余额来自 GET <base>/auth/me → data(或 data.user).balance(美元)
+ * - 已用/用量(该类网关自带记账,实测对账 total_actual_cost == 逐日趋势求和):
+ *   GET <base>/usage/dashboard/stats → data.total_actual_cost(累计已用,含赠送额度消耗)
+ *   GET <base>/usage/dashboard/trend?start_date=&end_date= → data.trend[](逐日 actual_cost)
  */
 import { ApiError, AuthError, NetworkError, SetupError, parseBalance, requestJson, shapeOf } from './base'
 import type { BalanceProvider, BalanceQueryContext, BalanceResult, JsonResponse } from './base'
+import type { BillingDay } from '@shared/balance'
 
 function trim(v: unknown): string {
   return typeof v === 'string' ? v.trim() : ''
@@ -79,6 +83,61 @@ async function fetchMe(apiBaseUrl: string, accessToken: string): Promise<MeUser>
   return user
 }
 
+/** 站点记账的累计已用(失败静默返回 null:用量缺失不影响余额展示) */
+async function fetchUsedCost(apiBaseUrl: string, accessToken: string): Promise<number | null> {
+  try {
+    const res = await requestJson(`${apiBaseUrl}/usage/dashboard/stats`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    })
+    if (res.status >= 400) return null
+    const body = (res.json ?? {}) as { code?: number; data?: { total_actual_cost?: unknown } }
+    if (body.code !== 0) return null
+    const used = parseBalance(body.data?.total_actual_cost)
+    return Number.isFinite(used) ? used : null
+  } catch {
+    return null
+  }
+}
+
+/** 逐日用量趋势(账单窗口);401 时用 refresh_token 续期后重试一次 */
+async function fetchUsageTrend(
+  apiBaseUrl: string,
+  accessToken: string,
+  refreshToken: string,
+  start: string,
+  end: string,
+  onTokensRefreshed: BalanceQueryContext['onTokensRefreshed']
+): Promise<BillingDay[]> {
+  const pull = async (token: string): Promise<JsonResponse> =>
+    requestJson(
+      `${apiBaseUrl}/usage/dashboard/trend?start_date=${encodeURIComponent(start)}&end_date=${encodeURIComponent(end)}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+  let res = await pull(accessToken)
+  if (res.status === 401) {
+    const fresh = await refreshTokens(apiBaseUrl, refreshToken)
+    onTokensRefreshed({
+      accessToken: String(fresh.access_token ?? ''),
+      refreshToken: String(fresh.refresh_token ?? '')
+    })
+    res = await pull(String(fresh.access_token))
+  }
+  if (res.status >= 400) throw ApiError(`获取用量趋势失败: HTTP ${res.status}`)
+  const body = (res.json ?? {}) as {
+    code?: number
+    data?: { trend?: Array<{ date?: unknown; actual_cost?: unknown }> }
+  }
+  const rows = body.code === 0 && Array.isArray(body.data?.trend) ? body.data.trend : null
+  if (!rows) throw ApiError('用量趋势响应结构异常')
+  const days: BillingDay[] = []
+  for (const row of rows) {
+    const date = typeof row?.date === 'string' ? row.date : ''
+    const used = parseBalance(row?.actual_cost)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(used)) days.push({ date, used })
+  }
+  return days
+}
+
 export const sub2apiProvider: BalanceProvider = {
   id: 'sub2api',
   label: 'sub2api 网关',
@@ -138,6 +197,17 @@ export const sub2apiProvider: BalanceProvider = {
     if (!Number.isFinite(balance)) {
       throw ApiError('响应中无 balance 字段,站点结构可能已变化')
     }
-    return { balance }
+    // 已用为锦上添花:拿不到(旧版网关/临时故障)就不填,调度器回退本机计量
+    const used = await fetchUsedCost(apiBaseUrl, accessToken)
+    return used === null ? { balance } : { balance, used }
+  },
+
+  async getUsage({ site, onTokensRefreshed, start, end }: BalanceQueryContext & { start: string; end: string }) {
+    const apiBaseUrl = trim(site.apiBaseUrl).replace(/\/+$/, '')
+    const accessToken = trim(site.accessToken)
+    const refreshToken = trim(site.refreshToken)
+    if (!apiBaseUrl) throw SetupError('未配置 API 地址')
+    if (!accessToken || !refreshToken) throw SetupError('尚未配置 Token')
+    return fetchUsageTrend(apiBaseUrl, accessToken, refreshToken, start, end, onTokensRefreshed)
   }
 }

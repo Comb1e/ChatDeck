@@ -28,6 +28,13 @@ export type BalanceSiteStatus =
   | 'api-error'
   | 'disabled'
 
+/**
+ * 站点"已用"数据的来源：
+ * - api:站点自身记账(如 sub2api /usage/dashboard/stats 的 total_actual_cost,含赠送额度的消耗)
+ * - metered:本机按"余额下降量"计量(DeepSeek 等无用量接口的站点,充值当期会低估,统计自首次观测)
+ */
+export type BalanceUsedSource = 'api' | 'metered'
+
 /** 调度器对外推送的每站点运行状态（不含凭据） */
 export interface BalanceSiteState {
   id: string
@@ -37,6 +44,9 @@ export interface BalanceSiteState {
   status: BalanceSiteStatus
   balance: number | null
   currency: string
+  /** 累计已用(口径见 BalanceUsedSource);null=暂无数据;PCT(百分比额度)站点恒为 null */
+  used: number | null
+  usedSource: BalanceUsedSource | null
   message: string | null
   updatedAt: string | null
   lastSuccessAt: string | null
@@ -132,4 +142,44 @@ export function formatBalance(balance: number | null, currency: string): string 
   if (currency === 'PCT') return `${Math.round(Number(balance))}%`
   const sym = CURRENCY_SYMBOLS[currency] || CURRENCY_SYMBOLS.USD
   return `${sym}${Number(balance).toFixed(2)}`
+}
+
+// ---------- 账单(账单窗口;sub2api=站点记账,DeepSeek=本机计量,百分比额度站点不参与) ----------
+
+/** 单日用量(YYYY-MM-DD,站点本地日;本机计量按本机时区) */
+export interface BillingDay {
+  date: string
+  used: number
+}
+
+/** 单月用量(YYYY-MM) */
+export interface BillingMonth {
+  month: string
+  used: number
+}
+
+/** 账单里一个站点的用量报告 */
+export interface BillingSiteReport {
+  id: string
+  label: string
+  icon: string
+  currency: string
+  source: BalanceUsedSource
+  /** 累计已用(api=最近一次站点记账;metered=本机计量累计) */
+  usedTotal: number
+  /** 统计起始日(YYYY-MM-DD):metered=首次计量日;api=趋势数据最早一天 */
+  since: string | null
+  /** 逐月用量(旧→新,最多近 6 个自然月) */
+  months: BillingMonth[]
+  /** 近 30 天逐日用量(旧→新) */
+  recent: BillingDay[]
+}
+
+/** 账单窗口数据(billing:get 的载荷;主进程现拉现算,不持久化) */
+export interface BillingReport {
+  generatedAt: string
+  /** 参与统计的站点(货币类) */
+  sites: BillingSiteReport[]
+  /** 不参与统计的站点名(百分比额度类,如火山方舟) */
+  excluded: string[]
 }

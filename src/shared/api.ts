@@ -14,7 +14,8 @@ import type {
   BalanceSiteDescriptionList,
   BalanceSiteInput,
   BalanceSiteTypeInfo,
-  BalanceSnapshot
+  BalanceSnapshot,
+  BillingReport
 } from './balance'
 import type { TranslateConfig, TranslatePairId, TranslatePopupState } from './translate'
 
@@ -49,6 +50,8 @@ export interface DeckApi {
     reload(id: string): void
     back(id: string): void
     forward(id: string): void
+    /** 把站点视图导航到指定地址(余额站点的 Usage 页) */
+    navigate(id: string, url: string): Promise<boolean>
     /** 粘贴到悬浮窗当前活动站点(提示词面板从设置窗口调用) */
     paste(): Promise<boolean>
   }
@@ -103,6 +106,12 @@ export interface DeckApi {
     refreshNow(): Promise<BalanceRefreshResult>
     /** 打开/关闭余额小窗;传 'show' 则只打开(幂等,设置窗口入口用) */
     toggle(mode?: 'show'): void
+    /** 打开独立账单窗口(每月用量等明细) */
+    openBilling(): void
+    /** 拉取账单报告(主进程现拉现算,可能耗时数秒) */
+    getBillingReport(): Promise<BillingReport>
+    /** 关闭账单窗口(账单窗口内部用) */
+    closeBilling(): void
     /** 打开站点的 Usage 页(系统浏览器) */
     openUsage(siteId: string): void
     /** 渲染层按内容测量的窗口尺寸 */
@@ -128,6 +137,8 @@ export interface DeckApi {
     titleChanged(cb: (e: { id: string; title: string }) => void): void
     activeChanged(cb: (e: { id: string }) => void): void
     loadStateChanged(cb: (e: { id: string; state: ViewLoadState }) => void): void
+    /** 余额站点的 Usage 页请求打开:先 navigate 再 activate */
+    usageOpen(cb: (e: { id: string; url: string }) => void): void
   }
   /** 主进程 → 鲸鱼渲染层事件 */
   onWhale: {

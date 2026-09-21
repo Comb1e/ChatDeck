@@ -8,7 +8,7 @@
  *   NetworkError — 网络不通/超时，下个周期重试即可
  *   ApiError     — 站点返回异常（code!==0 / 结构变化）
  */
-import type { BalanceSite, BalanceTokenField } from '@shared/balance'
+import type { BalanceSite, BalanceTokenField, BillingDay } from '@shared/balance'
 
 export type ProviderErrorKind = 'setup' | 'auth' | 'network' | 'api'
 
@@ -118,6 +118,11 @@ export interface BalanceResult {
    * 如 volcark 传"额度重置时间"的 ISO 串。
    */
   note?: string
+  /**
+   * 站点记账的累计已用(如 sub2api /usage/dashboard/stats 的 total_actual_cost)。
+   * 提供不了的类型(DeepSeek)由调度器走本机计量;拉取失败静默省略,不影响余额。
+   */
+  used?: number
 }
 
 export interface BalanceProvider {
@@ -134,4 +139,9 @@ export interface BalanceProvider {
   setupSteps: string[]
   hasCredentials(site: Partial<BalanceSite>): boolean
   getBalance(ctx: BalanceQueryContext): Promise<BalanceResult>
+  /**
+   * 拉取 [start, end] 内的逐日用量(YYYY-MM-DD,闭区间;账单窗口用)。
+   * 没有用量接口的类型不实现——调度器/账单对这类站点走本机计量。
+   */
+  getUsage?(ctx: BalanceQueryContext & { start: string; end: string }): Promise<BillingDay[]>
 }

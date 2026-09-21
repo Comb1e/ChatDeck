@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BalanceStore } from '../src/main/balance/store'
 import { BalanceScheduler } from '../src/main/balance/scheduler'
+import { UsageStore } from '../src/main/balance/usage'
 import { describeAll, describeNewSite, describeTypes } from '../src/main/balance/providers'
 
 let tmpDir = ''
@@ -131,7 +132,7 @@ describe('多站点调度:并行轮询与独立状态机', () => {
     })
 
     const store = new BalanceStore(tmpConfig)
-    const scheduler = new BalanceScheduler(store)
+    const scheduler = new BalanceScheduler(store, new UsageStore(null))
     store.upsertSite({ id: 'a', type: 'sub2api', label: 'A站', icon: 'openai', apiBaseUrl: 'https://a.test/api/v1', accessToken: 'A1', refreshToken: 'AR1', enabled: true })
     store.upsertSite({ id: 'b', type: 'sub2api', label: 'B站', icon: 'anthropic', apiBaseUrl: 'https://b.test/api/v1', accessToken: 'B1', refreshToken: 'BR1', enabled: true })
     store.upsertSite({ id: 'c', type: 'sub2api', label: 'C站', icon: 'kimi', apiBaseUrl: 'https://c.test/api/v1', accessToken: 'C1', refreshToken: 'CR1', enabled: true })
@@ -159,7 +160,7 @@ describe('多站点调度:并行轮询与独立状态机', () => {
       'https://b.test/api/v1': { me: { code: 0, data: { balance: 2 } }, refresh: null }
     })
     const store = new BalanceStore(tmpConfig)
-    const scheduler = new BalanceScheduler(store)
+    const scheduler = new BalanceScheduler(store, new UsageStore(null))
     store.upsertSite({ id: 'b', type: 'sub2api', label: 'B站', icon: 'openai', apiBaseUrl: 'https://b.test/api/v1', accessToken: 'B1', refreshToken: 'BR1', enabled: true })
 
     const dup = await scheduler.saveSite({
@@ -231,7 +232,7 @@ describe('多站点调度:并行轮询与独立状态机', () => {
       'https://a.test/api/v1': { me: { code: 0, data: { balance: 3 } }, refresh: null }
     })
     const store = new BalanceStore(tmpConfig)
-    const scheduler = new BalanceScheduler(store)
+    const scheduler = new BalanceScheduler(store, new UsageStore(null))
     store.upsertSite({ id: 'a', type: 'sub2api', label: 'A站', icon: 'openai', apiBaseUrl: 'https://a.test/api/v1', accessToken: 'A1', refreshToken: 'AR1', enabled: true })
 
     await scheduler.saveSite({
@@ -280,7 +281,7 @@ describe('站点类型注册表', () => {
       })
     }))
     const store = new BalanceStore(tmpConfig)
-    const scheduler = new BalanceScheduler(store)
+    const scheduler = new BalanceScheduler(store, new UsageStore(null))
     store.upsertSite({
       id: 'ark',
       type: 'volcark',

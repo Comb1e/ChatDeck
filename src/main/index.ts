@@ -18,8 +18,10 @@ import { TranslatePopupController } from './translateWindow'
 import { captureSelectedText } from './textCapture'
 import { BalanceStore } from './balance/store'
 import { BalanceScheduler } from './balance/scheduler'
+import { UsageStore } from './balance/usage'
 import { BalanceNotifier } from './balance/notify'
 import { BalanceWindowController } from './balance/window'
+import { BillingWindowController } from './balance/billing-window'
 
 const stores = {
   providers: new ProviderStore(),
@@ -41,14 +43,18 @@ const floatWin = new FloatWindowController({
   onDetachViews: () => floatViews.setLayout([])
 })
 const whaleWin = new WhaleWindowController()
-// 余额监控（移植自 token-balance）：配置存 userData，与站点配置同文件
+// 余额监控（移植自 token-balance）：配置存 userData，与站点配置同文件；
+// 用量台账独立成文件（派生数据,清掉即重新计量,不污染用户手编的配置）
 const balanceStore = new BalanceStore(join(app.getPath('userData'), 'balance.user.json'))
-const balanceScheduler = new BalanceScheduler(balanceStore)
+const balanceUsage = new UsageStore(join(app.getPath('userData'), 'balance.usage.json'))
+const balanceScheduler = new BalanceScheduler(balanceStore, balanceUsage)
 const balanceNotifier = new BalanceNotifier(resourceFile('balance-icon.png'))
 const balanceWin = new BalanceWindowController({
   store: balanceStore,
   onVisibilityChanged: (visible) => tray?.setBalanceChecked(visible)
 })
+// 账单窗口:余额明细(每月用量),由余额卡片/胶囊/设置窗口入口打开,关闭即销毁
+const billingWin = new BillingWindowController()
 const settingsWin = new SettingsWindowController()
 let tray: TrayController | null = null
 
@@ -133,6 +139,8 @@ async function bootstrap(): Promise<void> {
     balanceStore,
     balanceScheduler,
     balanceWin,
+    billingWin,
+    balanceUsage,
     settingsWin,
     translate,
     translateWin,
@@ -235,5 +243,6 @@ app.on('before-quit', () => {
   whaleWin.destroy()
   balanceScheduler.stop()
   balanceWin.destroy()
+  billingWin.destroy()
   tray?.destroy()
 })

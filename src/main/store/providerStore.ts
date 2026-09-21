@@ -71,6 +71,7 @@ export class ProviderStore {
         ...(input.url?.trim() ? { url: normalizeUrl(input.url) } : {}),
         ...(input.color?.trim() ? { color: input.color.trim() } : {}),
         ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+        ...(input.userAgent !== undefined ? { userAgent: input.userAgent } : {}),
         ...(input.autoSleepMinutes !== undefined ? { autoSleepMinutes: input.autoSleepMinutes } : {})
       }
     } else {
@@ -85,6 +86,7 @@ export class ProviderStore {
         color: input.color?.trim() || '#D97757',
         enabled: input.enabled ?? true,
         builtin: false,
+        ...(input.userAgent !== undefined ? { userAgent: input.userAgent } : {}),
         ...(input.autoSleepMinutes !== undefined ? { autoSleepMinutes: input.autoSleepMinutes } : {})
       })
     }

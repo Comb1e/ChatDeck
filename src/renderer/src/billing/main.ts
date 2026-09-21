@@ -78,7 +78,11 @@ function renderSite(site: BillingSiteReport): void {
     .join('')
   const note =
     site.source === 'metered'
-      ? '<div class="meter-note">本机计量:按余额下降估算,充值当期可能低估;清空数据后从零重计。</div>'
+      ? `<div class="meter-note${site.note ? ' warn' : ''}">${
+          site.note
+            ? escapeHtml(site.note)
+            : '本机计量:按余额下降估算,充值当期可能低估;清空数据后从零重计。'
+        }</div>`
       : ''
   div.innerHTML =
     `<div class="site-head">` +

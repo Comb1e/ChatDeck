@@ -173,6 +173,8 @@ export interface BillingSiteReport {
   months: BillingMonth[]
   /** 近 30 天逐日用量(旧→新) */
   recent: BillingDay[]
+  /** 补充说明(如"站点接口暂不可用,已回退本机计量"——此时数字与实际用量可能差很多) */
+  note?: string
 }
 
 /** 账单窗口数据(billing:get 的载荷;主进程现拉现算,不持久化) */

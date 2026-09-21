@@ -66,12 +66,7 @@ async function buildSiteReport(
 
   if (adapter.getUsage) {
     try {
-      const days = await adapter.getUsage({
-        site,
-        onTokensRefreshed: (tokens) => deps.store.updateSiteFields(site.id, tokens),
-        start,
-        end
-      })
+      const days = await fetchUsageWithRetry(adapter, site, deps, start, end)
       return {
         kind: 'site',
         report: {
@@ -84,7 +79,8 @@ async function buildSiteReport(
         }
       }
     } catch {
-      // 站点趋势接口临时故障:回退本机计量,账单不至于整块缺失
+      // 站点趋势接口不可用(站点/代理链路的间歇性故障实测常见):回退本机计量,
+      // 但必须标注清楚——否则"本机计量 0.00"会被误读成该站从没用过
     }
   }
 
@@ -102,8 +98,32 @@ async function buildSiteReport(
       usedTotal: rec?.meterTotal ?? 0,
       since: rec?.meterSince ?? null,
       months: aggregateMonths(meteredDays),
-      recent: meteredDays.filter((d) => d.date >= recentStart)
+      recent: meteredDays.filter((d) => d.date >= recentStart),
+      ...(adapter.getUsage ? { note: '站点用量接口暂不可用,已回退本机计量(数字可能低于实际)' } : {})
     }
+  }
+}
+
+/** 趋势拉取失败(网络抖动/代理链路)重试一次,仍失败才回退本机计量 */
+async function fetchUsageWithRetry(
+  adapter: NonNullable<ReturnType<typeof getAdapter>>,
+  site: BalanceSite,
+  deps: BillingDeps,
+  start: string,
+  end: string
+): Promise<BillingDay[]> {
+  const pull = (): Promise<BillingDay[]> =>
+    adapter.getUsage!({
+      site,
+      onTokensRefreshed: (tokens) => deps.store.updateSiteFields(site.id, tokens),
+      start,
+      end
+    })
+  try {
+    return await pull()
+  } catch {
+    await new Promise((resolve) => setTimeout(resolve, 700))
+    return pull()
   }
 }
 

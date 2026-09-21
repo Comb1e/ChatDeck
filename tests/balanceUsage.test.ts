@@ -301,6 +301,37 @@ describe('buildBillingReport:账单报告', () => {
     const sp = report.sites.find((s) => s.id === 'sp')
     expect(sp).toMatchObject({ source: 'metered', usedTotal: 3 })
     expect(sp?.months).toEqual([{ month: '2026-09', used: 3 }])
+    // 有 getUsage 能力的站点回退时必须标注,避免"本机计量 0.00"被误读成从未用过
+    expect(sp?.note).toContain('站点用量接口暂不可用')
+  })
+
+  it('趋势接口先失败后成功:重试一次即恢复 api 口径', async () => {
+    let trendCalls = 0
+    vi.stubGlobal('fetch', async (url: string) => {
+      if (url.startsWith('https://s.test/api/v1') && url.endsWith('/auth/me')) {
+        return { status: 200, json: async () => ({ code: 0, data: { balance: 5 } }) }
+      }
+      if (url.includes('/usage/dashboard/trend')) {
+        trendCalls++
+        if (trendCalls === 1) throw new Error('ECONNRESET') // 第一次网络抖动
+        return {
+          status: 200,
+          json: async () => ({ code: 0, data: { trend: [{ date: '2026-09-20', actual_cost: 12.5 }] } })
+        }
+      }
+      if (url.endsWith('/usage/dashboard/stats')) {
+        return { status: 200, json: async () => ({ code: 0, data: { total_actual_cost: 12.5 } }) }
+      }
+      throw new Error('unexpected url ' + url)
+    })
+    const store = seedStore()
+    const usage = new UsageStore(null)
+    usage.recordApiUsed('sp', 'USD', 12.5, '2026-09-21T00:00:00Z')
+    const report = await buildBillingReport({ store, usage }, new Date(2026, 8, 21, 12, 0, 0))
+    const sp = report.sites.find((s) => s.id === 'sp')
+    expect(trendCalls).toBe(2) // 失败一次 + 重试一次
+    expect(sp).toMatchObject({ source: 'api', usedTotal: 12.5 })
+    expect(sp?.note).toBeUndefined()
   })
 })
 

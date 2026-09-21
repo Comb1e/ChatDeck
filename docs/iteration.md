@@ -1,5 +1,38 @@
 # 迭代记录
 
+## v0.5.0（2026-09-21）
+
+功能合并（用户需求）：把 token-balance 的余额监控合并进 ChatDeck——新增一个**独立**的余额小窗，与悬浮窗/鲸鱼形态系统无关，托盘右键菜单开关显隐。已确认：外观原样保留、现有站点与 token 一次性迁移、默认隐藏并记住上次状态。
+
+### 上版问题
+
+- 用户另有一个成型的余额监控小工具（token-balance：轮询 sub2api 网关与 DeepSeek 官方余额，胶囊 + 站点卡片），希望并进 ChatDeck 一起用，而不是再单独跑一个程序。
+- token-balance 的配置写在项目根 `config.json`（`__dirname/../..`）——合并进打包应用后该路径落在 asar 内只读，窗口位置记忆与 sub2api token 轮换写回都会失败；且它自带托盘与开机自启项，与 ChatDeck 的同类入口冲突。
+
+### 方法（根因）
+
+- **忠实移植，只改落地方式**：主进程逻辑（配置读写/协议适配/调度器/通知）TS 化到 `src/main/balance/`，渲染层（胶囊/列表/编辑卡片、尺寸自适应、样式）原样移植到 `src/renderer/src/balance/`（纯 TS，无 Vue，与 whale 同风格）；新增第五个渲染入口 `balance.html`。
+  接缝改动逐条：配置改存 `userData/balance.user.json`（`BalanceStore` 以文件路径为构造参数，测试注入临时目录；写入改为临时文件 + rename 原子替换）；IPC 通道加 `balance:` / `ev:balance-*` 前缀；窗口层级从 `screen-saver` 统一为 `floating`；去掉自带托盘与开机自启项（ChatDeck 已有）；渲染层去掉"浏览器直接打开时的 Mock 预览"分支（避免 preload 失效时静默显示假数据）。
+- **独立窗口**：`BalanceWindowController`（惰性创建、`showInactive()` 不抢焦点、位置记忆 + 拖动过程屏幕内硬约束 + 反 Aero Snap + 按渲染层内容自适应尺寸，全部沿用原版行为）；显隐由托盘菜单 checkbox「余额监控」控制，勾选态经 `onVisibilityChanged` 回写，显隐状态持久化、下次启动恢复（默认隐藏）。
+- **轮询常驻主进程**：默认 5 分钟（1–60 钳制）、窗口隐藏照常刷新、状态切换沿发系统通知（Token 失效 / 余额恢复）；调度器改为实例（原为模块级单例），配置存储由组合根注入，`describeAll(store)` 显式接收存储，摆脱原测试脚本对 `Module._resolveFilename` 的补丁。
+- **适配器契约不变**：`ProviderError` 四种错误 kind（setup/auth/network/api）驱动每站点状态机；sub2api 401 → refresh 轮换新 token 写回站点 → 重试一次；DeepSeek 官方 `/user/balance` 币种随响应返回。凭据只在主进程，`describe*` 交给渲染层的对象不含凭据（有序列化断言测试）。
+- **凭据迁移（一次性手工操作，不进仓库）**：把 token-balance 现有 `config.json` 的 3 个站点（SpacetimeAI、Sub2API、DeepSeek，含 access/refresh token）写入 `%APPDATA%/chatdeck/balance.user.json`；窗口位置不迁移（新窗口落默认位），显隐初始为 false。
+
+### 验证结果
+
+- 回归：`npm run typecheck` 三工程通过；**163/163** 单测通过（原 127 + 移植 36）。
+- 移植测试（原脚本 → vitest，共 36 例）：两个协议的成功/嵌套/平铺形态、余额 0 与字符串余额、code≠0、字段缺失、非 JSON、401→续期→重试、续期失败、凭据缺失；旧格式配置无损迁移、interval 钳制、窗口状态持久化、四站点混合类型并行轮询与独立状态机、断网/停用、保存校验（重复地址/非法地址/留空保持）、删除、类型注册表、描述对象不含凭据。
+- dev 冒烟（临时钩子，验证后已删，grep 临时=0）：三个迁移站点**真实拉取成功**（SpacetimeAI 4.97 USD / Sub2API 12.76 USD / DeepSeek 8.42 CNY）；默认隐藏 → `show()` 后可见且窗口按内容自适应为 200×112（说明渲染层渲染了 3 行胶囊并走通 resize 通道）→ `hide()` 生效；鲸鱼照常启动，无回归。
+- 打包：v0.5.0 双包 68.1/68.3MB（与 v0.4.0 持平，仅多一个几十 KB 的渲染入口）；asar 五入口齐全、`resources/balance-icon.png` 就位；打包版冒烟：把 `visible` 临时置 true 后启动，**EnumWindows 确认「ChatDeck 余额」可见且尺寸 200×112**、「ChatDeck 鲸鱼」可见、「ChatDeck 悬浮窗」隐藏；随后恢复默认隐藏并重启留给用户试用。
+
+### 遗留问题
+
+- 刷新间隔仍只改 `balance.user.json`（界面不暴露，与原版一致）；托盘只加开关一项，「立即刷新/站点管理」在窗口内（右键胶囊直达管理）。
+- 托盘 tooltip 未接管「X/Y 站点正常」（保持 ChatDeck）；品牌文案「Token Balance」按"原样保留"决定未改。
+- 凭据为明文 JSON（与原版一致）；文件在 userData 内、不入仓库。
+- 余额小窗渲染进程崩溃后不自动重建（原版亦无），下次开关窗口即重建；如需与悬浮窗同级的重建守卫可后续补。
+- v0.4.0 遗留照旧（鲸鱼单主显示器策略、未读气泡潜水期不显示等）；v0.3.7/0.3.6/0.3.5 遗留照旧。
+
 ## v0.4.0（2026-09-20）
 
 形态升级（用户需求）：把 whale-pet 小鲸鱼桌宠作为悬浮窗的**压缩形态**——鲸鱼完全取代 148×64 药丸。本轮只做合并，不改两个项目各自的功能（仅 4 处经用户确认的集成胶水）。

@@ -46,6 +46,18 @@ export const IPC = {
 
   ClipboardWrite: 'clipboard:write',
 
+  // 余额监控(移植自 token-balance;独立小窗,与悬浮窗/鲸鱼形态无关)
+  BalanceState: 'balance:state',
+  BalanceDescribeSites: 'balance:describe-sites',
+  BalanceDescribeNewSite: 'balance:describe-new-site',
+  BalanceDescribeSiteTypes: 'balance:describe-site-types',
+  BalanceSaveSite: 'balance:save-site',
+  BalanceRemoveSite: 'balance:remove-site',
+  BalanceRefresh: 'balance:refresh',
+  BalanceOpenUsage: 'balance:open-usage',
+  /** 渲染层按内容测量的窗口尺寸(主进程按工作区钳制) */
+  BalanceResize: 'balance:resize',
+
   // 划词翻译(配置在设置窗口填写;结果推给译文弹窗渲染层)
   TranslateGetConfig: 'translate:get-config',
   TranslateSaveConfig: 'translate:save-config',
@@ -62,6 +74,8 @@ export const IPC = {
   EvWhaleWorkarea: 'ev:whale-workarea',
   EvWhaleCommand: 'ev:whale-command',
   EvWhaleUnread: 'ev:whale-unread',
+  // 主进程 → 余额小窗事件
+  EvBalanceState: 'ev:balance-state',
   // 译文弹窗事件(只发给弹窗 webContents)
   EvTranslateResult: 'ev:translate-result'
 } as const

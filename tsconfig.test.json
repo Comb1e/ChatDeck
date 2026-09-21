@@ -18,5 +18,12 @@
       "@renderer/*": ["src/renderer/src/*"]
     }
   },
-  "include": ["tests/**/*", "src/shared/**/*", "src/renderer/src/whale/**/*", "src/renderer/src/env.d.ts"]
+  "include": [
+    "tests/**/*",
+    "src/shared/**/*",
+    "src/renderer/src/whale/**/*",
+    "src/renderer/src/balance/**/*",
+    "src/main/balance/**/*",
+    "src/renderer/src/env.d.ts"
+  ]
 }

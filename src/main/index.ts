@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { app, Menu, globalShortcut, powerMonitor, screen } from 'electron'
 import { IPC } from '@shared/ipc'
 import { formatDirection, resolveDirection } from '@shared/translate'
@@ -5,6 +6,7 @@ import type { TranslatePopupState } from '@shared/translate'
 import { FLOAT_EXPANDED } from '@shared/floatLayout'
 import { ProviderStore } from './store/providerStore'
 import { PromptStore } from './store/promptStore'
+import { resourceFile } from './store/jsonStore'
 import { MOBILE_UA, ViewManager } from './viewManager'
 import { FloatWindowController } from './floatWindow'
 import { WhaleWindowController } from './whaleWindow'
@@ -14,6 +16,10 @@ import { registerIpc } from './ipc'
 import { TranslateService } from './translateService'
 import { TranslatePopupController } from './translateWindow'
 import { captureSelectedText } from './textCapture'
+import { BalanceStore } from './balance/store'
+import { BalanceScheduler } from './balance/scheduler'
+import { BalanceNotifier } from './balance/notify'
+import { BalanceWindowController } from './balance/window'
 
 const stores = {
   providers: new ProviderStore(),
@@ -35,6 +41,14 @@ const floatWin = new FloatWindowController({
   onDetachViews: () => floatViews.setLayout([])
 })
 const whaleWin = new WhaleWindowController()
+// 余额监控（移植自 token-balance）：配置存 userData，与站点配置同文件
+const balanceStore = new BalanceStore(join(app.getPath('userData'), 'balance.user.json'))
+const balanceScheduler = new BalanceScheduler(balanceStore)
+const balanceNotifier = new BalanceNotifier(resourceFile('balance-icon.png'))
+const balanceWin = new BalanceWindowController({
+  store: balanceStore,
+  onVisibilityChanged: (visible) => tray?.setBalanceChecked(visible)
+})
 const settingsWin = new SettingsWindowController()
 let tray: TrayController | null = null
 
@@ -101,6 +115,10 @@ async function bootstrap(): Promise<void> {
       // 招牌动作只在鲸鱼可见时有意义(隐藏时动画无人看)
       if (whaleWin.isVisible()) whaleWin.sendJumpDive()
     },
+    toggleBalance: () => {
+      // 余额小窗显隐由托盘菜单控制;勾选态经 onVisibilityChanged 回写
+      balanceWin.toggle()
+    },
     quit: () => {
       app.quit()
     }
@@ -112,6 +130,9 @@ async function bootstrap(): Promise<void> {
     floatViews,
     floatWin,
     whaleWin,
+    balanceStore,
+    balanceScheduler,
+    balanceWin,
     settingsWin,
     translate,
     translateWin,
@@ -123,6 +144,15 @@ async function bootstrap(): Promise<void> {
   // 其渲染层保持存活:站点视图加载、未读统计、快速展开都依赖它
   floatWin.ensureCreated()
   whaleWin.show()
+
+  // 余额监控:主进程轮询常驻(窗口隐藏也照常刷新、通知照发);
+  // 上次退出时窗口可见则恢复显示(默认隐藏)
+  balanceScheduler.startSchedule((snapshot) => {
+    balanceWin.pushState(snapshot)
+    balanceNotifier.onSnapshot(snapshot)
+  })
+  if (balanceStore.load().window.visible) balanceWin.show()
+  else tray.setBalanceChecked(false)
 
   // 后台站点休眠扫描:每分钟检查一次,超过站点休眠阈值未显示的站点视图销毁释放内存
   setInterval(() => floatViews.sweepSleep(), 60_000)
@@ -203,5 +233,7 @@ app.on('before-quit', () => {
   globalShortcut.unregisterAll()
   floatViews.destroyAll()
   whaleWin.destroy()
+  balanceScheduler.stop()
+  balanceWin.destroy()
   tray?.destroy()
 })

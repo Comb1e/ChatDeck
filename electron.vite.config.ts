@@ -55,6 +55,7 @@ export default defineConfig({
           settings: resolve('src/renderer/settings.html'),
           float: resolve('src/renderer/float.html'),
           whale: resolve('src/renderer/whale.html'),
+          balance: resolve('src/renderer/balance.html'),
           translate: resolve('src/renderer/translate.html')
         }
       }

@@ -7,6 +7,15 @@ import type {
   Rect,
   ViewLoadState
 } from './types'
+import type {
+  BalanceRefreshResult,
+  BalanceSaveResult,
+  BalanceSiteDescription,
+  BalanceSiteDescriptionList,
+  BalanceSiteInput,
+  BalanceSiteTypeInfo,
+  BalanceSnapshot
+} from './balance'
 import type { TranslateConfig, TranslatePairId, TranslatePopupState } from './translate'
 
 /** 主进程 → 鲸鱼渲染层的行为命令 */
@@ -78,6 +87,25 @@ export interface DeckApi {
   clipboard: {
     writeText(text: string): Promise<boolean>
   }
+  /** 余额监控小窗(独立窗口,托盘开关显隐;数据面均由主进程持有) */
+  balance: {
+    /** 当前全部站点运行状态 */
+    getState(): Promise<BalanceSnapshot>
+    /** 站点元信息列表(不含凭据) */
+    describeSites(): Promise<BalanceSiteDescriptionList>
+    /** "添加站点"表单默认值(按类型) */
+    describeNewSite(type: string): Promise<BalanceSiteDescription>
+    /** "添加站点"类型选择器选项 */
+    describeSiteTypes(): Promise<BalanceSiteTypeInfo[]>
+    /** 保存并立即验证(凭据留空表示保持不变) */
+    saveSite(input: BalanceSiteInput): Promise<BalanceSaveResult>
+    removeSite(id: string): Promise<{ ok: boolean }>
+    refreshNow(): Promise<BalanceRefreshResult>
+    /** 打开站点的 Usage 页(系统浏览器) */
+    openUsage(siteId: string): void
+    /** 渲染层按内容测量的窗口尺寸 */
+    resize(width: number, height: number): void
+  }
   /** 划词翻译(设置表单与译文弹窗共用同一 preload) */
   translate: {
     getConfig(): Promise<TranslateConfig>
@@ -105,6 +133,10 @@ export interface DeckApi {
     workarea(cb: (wa: Rect) => void): void
     command(cb: (cmd: WhaleCommand) => void): void
     unread(cb: (count: number) => void): void
+  }
+  /** 主进程 → 余额小窗事件(仅余额窗口会收到) */
+  onBalance: {
+    state(cb: (snapshot: BalanceSnapshot) => void): void
   }
 }
 

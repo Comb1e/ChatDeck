@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ChatDeck 余额</title>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    />
+  </head>
+  <body>
+    <div id="app">
+      <!-- 收起态:胶囊(多站点余额组) -->
+      <div id="pill" class="surface" role="button" aria-label="展开余额详情" tabindex="0">
+        <div id="pillGroups"></div>
+      </div>
+
+      <!-- 展开态:卡片 -->
+      <div id="card" class="surface" hidden>
+        <div id="cardHeader" class="draggable">
+          <span id="cardTitle">Token Balance</span>
+          <div class="header-actions">
+            <button id="btnAdd" class="icon-btn" title="添加站点" aria-label="添加站点">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>
+            </button>
+            <button id="btnCollapse" class="icon-btn" title="收起" aria-label="收起">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7 4.3 4.3l6.3 6.3 6.3-6.3z" transform="translate(0.4)"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- 站点列表视图 -->
+        <section id="listView" hidden>
+          <div id="totalBlock" hidden>
+            <div class="balance-label">合计</div>
+            <div id="totalValue" class="balance-value">--</div>
+          </div>
+          <div id="emptyHint" class="empty-hint" hidden>
+            还没有站点,点击右上角 + 添加一个
+          </div>
+          <div id="siteRows"></div>
+          <div class="actions">
+            <button id="btnRefreshAll" class="btn primary">
+              <svg id="refreshIcon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 4a8 8 0 0 1 7.7 5.9l2-4-1.8-.9-1 2A10 10 0 0 0 2.2 10l2 .4A8 8 0 0 1 12 4Zm0 16a8 8 0 0 1-7.7-5.9l-2 4 1.8.9 1-2A10 10 0 0 0 21.8 14l-2-.4A8 8 0 0 1 12 20Z" transform="rotate(20 12 12)"/></svg>
+              刷新全部
+            </button>
+            <button id="btnAddBottom" class="btn ghost">添加站点</button>
+          </div>
+        </section>
+
+        <!-- 站点编辑视图 -->
+        <section id="editView" hidden>
+          <div class="setup-title" id="editTitle">编辑站点</div>
+          <div class="field" id="typeField" hidden>
+            <span class="field-label">站点类型</span>
+            <div id="typePicker" class="type-picker"></div>
+          </div>
+          <label class="field">
+            <span class="field-label">名称</span>
+            <input id="inputLabel" type="text" spellcheck="false" placeholder="如 SpacetimeAI" />
+          </label>
+          <label class="field">
+            <span class="field-label">API 地址</span>
+            <input id="inputBase" type="text" spellcheck="false" autocomplete="off" placeholder="https://example.com/api/v1" />
+          </label>
+          <label class="field">
+            <span class="field-label">Usage 页地址(可选,默认从 API 地址推导)</span>
+            <input id="inputUsage" type="text" spellcheck="false" autocomplete="off" placeholder="https://example.com/usage" />
+          </label>
+          <div class="field">
+            <span class="field-label">图标</span>
+            <div id="iconPicker" class="icon-picker"></div>
+          </div>
+          <ol id="setupSteps" class="setup-steps"></ol>
+          <div id="tokenFields"></div>
+          <label class="check-line">
+            <input id="inputEnabled" type="checkbox" checked />
+            <span>启用该站点(参与余额显示与自动刷新)</span>
+          </label>
+          <button id="btnSave" class="btn primary block">保存并验证</button>
+          <button id="btnDelete" class="btn danger block" hidden>删除站点</button>
+          <button id="btnBack" class="btn ghost block">返回列表</button>
+          <div id="editMsg" class="setup-msg" hidden></div>
+        </section>
+      </div>
+    </div>
+    <script type="module" src="/src/balance/main.ts"></script>
+  </body>
+</html>

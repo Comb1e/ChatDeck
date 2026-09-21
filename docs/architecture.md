@@ -1,30 +1,31 @@
 # ChatDeck 架构
 
-> 用最简单的话说：ChatDeck 是一个常驻桌面的「悬浮小窗套壳浏览器」+ 一只小鲸鱼——平时鲸鱼在桌面上游，点一下它展开内嵌 LLM 网页的悬浮窗；收起后鲸鱼在悬浮窗原来的位置破水浮出。托盘右键放设置等入口；没有主窗口。
+> 用最简单的话说：ChatDeck 是一个常驻桌面的「悬浮小窗套壳浏览器」+ 一只小鲸鱼 + 一个余额小窗——平时鲸鱼在桌面上游，点一下它展开内嵌 LLM 网页的悬浮窗；收起后鲸鱼在悬浮窗原来的位置破水浮出。托盘右键放设置、余额监控等入口；没有主窗口。
 
 ## 技术栈
 
 Electron（主进程 + WebContentsView）+ Vue 3 + TypeScript + Pinia + electron-vite + Vitest。
 
-鲸鱼（悬浮窗压缩形态）渲染层移植自 whale-pet 项目（纯 TypeScript 行为脚本，不用 Vue）。
+鲸鱼（悬浮窗压缩形态）渲染层移植自 whale-pet 项目（纯 TypeScript 行为脚本，不用 Vue）；
+余额监控小窗移植自 token-balance 项目（同样是纯 TypeScript 渲染层）。
 
 ## 整体结构
 
 ```
-┌────────────────────────────┐        ┌──────────────────────────────┐
-│ FloatWindow (悬浮窗·展开态)  │        │ WhaleWindow (鲸鱼·压缩态)     │
-│ 360×620 frame:false         │        │ 覆盖主显示器工作区            │
-│ + transparent + alwaysOnTop │        │ 默认鼠标穿透(forward)         │
-│ ┌────────────────────────┐ │        │ ┌──────────────────────────┐ │
-│ │ FloatHeader (HTML)      │ │        │ │ SVG 鲸鱼 + Canvas 特效    │ │
-│ ├────────────────────────┤ │        │ │ (水花/气泡/涟漪/Zzz/爱心) │ │
-│ │ WebContentsView (站点)  │ │        │ ├──────────────────────────┤ │
-│ │ 或 FloatPrompts (HTML)  │ │        │ │ 未读气泡(HTML,头顶跟随)  │ │
-│ ├────────────────────────┤ │        │ └──────────────────────────┘ │
-│ │ 底部提示词条 (HTML)      │ │        │ 悬停鲸鱼 → 开启窗口交互        │
-│ └────────────────────────┘ │        │ 单击鲸鱼 → 展开悬浮窗          │
-└────────────────────────────┘        └──────────────────────────────┘
-        两种形态互斥显示（收起/展开由主进程编排）
+┌────────────────────────────┐  ┌──────────────────────────────┐  ┌────────────────────────┐
+│ FloatWindow (悬浮窗·展开态)  │  │ WhaleWindow (鲸鱼·压缩态)     │  │ BalanceWindow (余额小窗)│
+│ 360×620 frame:false         │  │ 覆盖主显示器工作区            │  │ 196×56 起,按内容自适应   │
+│ + transparent + alwaysOnTop │  │ 默认鼠标穿透(forward)         │  │ 无边框透明胶囊/卡片      │
+│ ┌────────────────────────┐ │  │ ┌──────────────────────────┐ │  │ ┌────────────────────┐ │
+│ │ FloatHeader (HTML)      │ │  │ │ SVG 鲸鱼 + Canvas 特效    │ │  │ │ 胶囊:各站点余额      │ │
+│ ├────────────────────────┤ │  │ │ (水花/气泡/涟漪/Zzz/爱心) │ │  │ ├────────────────────┤ │
+│ │ WebContentsView (站点)  │ │  │ ├──────────────────────────┤ │  │ │ 卡片:列表/编辑站点   │ │
+│ │ 或 FloatPrompts (HTML)  │ │  │ │ 未读气泡(HTML,头顶跟随)  │ │  │ │ (展开态,含刷新)     │ │
+│ ├────────────────────────┤ │  │ └──────────────────────────┘ │  │ └────────────────────┘ │
+│ │ 底部提示词条 (HTML)      │ │  │ 悬停鲸鱼 → 开启窗口交互        │  │ 托盘右键「余额监控」开关  │
+│ └────────────────────────┘ │  │ 单击鲸鱼 → 展开悬浮窗          │  │ 与悬浮窗/鲸鱼互不影响    │
+└────────────────────────────┘  └──────────────────────────────┘  └────────────────────────┘
+        鲸鱼 ⇄ 悬浮窗两种形态互斥显示（主进程编排）；余额小窗独立并存，托盘开关控制显隐
 ```
 
 **关键点：WebContentsView 是原生层，永远盖在 HTML 上面。** 所以悬浮窗 UI 划分为两类：
@@ -32,14 +33,15 @@ Electron（主进程 + WebContentsView）+ Vue 3 + TypeScript + Pinia + electron
 1. **永不被遮挡的区域**（纯 HTML）：悬浮窗头部、提示词面板、底部条。所有交互控件都在这些区域。
 2. **站点区域**：主进程把 WebContentsView 放在渲染层算出来的矩形里。加载失败时在视图内部加载本地 `resources/error.html`（重试按钮走 error preload 的 IPC），**而不是**用 HTML 盖上去（盖不住）。
 
-## 窗口形态：鲸鱼 + 悬浮窗 + 设置窗口 + 译文弹窗
+## 窗口形态：鲸鱼 + 悬浮窗 + 余额小窗 + 设置窗口 + 译文弹窗
 
-应用没有主窗口，四个窗口各司其职、共用同一批站点会话分区：
+应用没有主窗口，五个窗口各司其职、共用同一批站点会话分区：
 
 ```
 app（单实例 + 托盘常驻,窗口全关也不退出,退出只走托盘「退出」）
 ├─ WhaleWindow    鲸鱼窗口(压缩形态,启动默认显示)  ── 无站点视图
 ├─ FloatWindow    悬浮窗(展开形态,站点唯一宿主)     ── ViewManager ◀─ fview:* 通道（移动端 UA）
+├─ BalanceWindow  余额小窗(独立,托盘开关控显隐)      ── 无站点视图,主进程轮询余额
 ├─ SettingsWindow 设置窗口(惰性创建,关闭即销毁)      ── 无站点视图,承载设置/提示词库面板
 └─ TranslatePopup 译文弹窗(依附悬浮窗位置,见下节)    ── 无站点视图
 ```
@@ -50,6 +52,7 @@ app（单实例 + 托盘常驻,窗口全关也不退出,退出只走托盘「退
 - **鲸鱼窗口**（`whaleWindow.ts`，规格与 whale-pet 一致）：透明无边框窗口**覆盖主显示器工作区**，鲸鱼完全在 Chromium 内游动（原生窗口不动，避免原生移动与渲染合成不同步）。默认 `setIgnoreMouseEvents(true, {forward: true})` **鼠标穿透**；渲染层 hitTest 命中鲸鱼/未读气泡时才 `setInteractive(true)` 接管鼠标（离开即恢复穿透）。渲染层初始化完成（`whale:ready`）后才显示，避免闪空。`display-metrics-changed` 时窗口跟随工作区并通知渲染层。
 - **悬浮窗**：无边框透明置顶小窗，**只有展开态 360×620**（旧的 148×64 药丸形态已删除，由鲸鱼取而代之）。启动时以 `ensureCreated()` **隐藏创建**——渲染层保持存活，站点视图加载、未读统计、快速展开都依赖它；`floatStore.sync` 只把**当前活动站点**以非零矩形挂载，其余站点视图按休眠策略销毁/保留。
 - **设置窗口**：普通有框窗口（`settingsWindow.ts`），渲染层入口 `settings.html`，顶部标签页「设置 / 提示词库」，内部复用 `SettingsPanel`/`PromptPanel`/`PromptEditor`/`PromptFill` 组件（与悬浮窗共用 stores）。入口三处：托盘「设置…」、悬浮窗头部齿轮、`app:open-settings` IPC；已开则聚焦。
+- **余额小窗**（`balance/window.ts`）：无边框透明胶囊/卡片，196×56 起按渲染层内容自适应（胶囊每站点一行 / 展开卡片 372 宽、高至多 890 + 主进程按工作区钳制）。惰性创建、`showInactive()` 不抢焦点、位置记忆 + 拖动过程屏幕内硬约束 + 反 Aero Snap（外部改尺寸立即拉回）。**与悬浮窗/鲸鱼形态完全无关**：托盘右键「余额监控」勾选项开关它，显隐状态持久化到配置、下次启动按上次状态恢复（默认隐藏）。窗口层级 'floating'（与悬浮窗/鲸鱼同级）。
 - **登录态互通**：站点视图与历史桌面版用同名分区 `persist:provider-<id>`，同名 partition 即同一 session，历史登录数据直接沿用。
 - **移动端 UA**：悬浮窗视图用 `webContents.setUserAgent()`（视图级）盖移动端 UA 匹配 360 宽面板，**不能**用 `session.setUserAgent`（会污染同分区其他视图）。厂商自带 `userAgent` 配置优先。
 - **隐藏不刷新**：切到提示词模式时，站点视图用**零矩形** `{0,0,0,0}` 保持挂载（`setLayout([])` 会 detach→重挂→整页刷新）。
@@ -131,6 +134,52 @@ whale/app.ts（编排:主循环/行为大脑/输入/接线）
   → ev:whale-unread → 鲸鱼渲染层 badge.setUnread → 头顶气泡（隐藏窗口期间照常累计）
 ```
 
+## 余额监控（移植自 token-balance）
+
+独立小窗：收起态是一行一个站点的余额胶囊，展开为站点卡片（列表 / 编辑 / 添加 / 删除 / 刷新全部）。整条数据链路都在**主进程**（渲染层 CSP 不放行外网），与悬浮窗/鲸鱼的形态系统完全无关。
+
+### 数据流
+
+```
+主进程 BalanceScheduler（实例；配置存储由 index.ts 注入）
+  ├─ 定时轮询（默认 5 分钟，1–60 钳制；改 interval 需重启；窗口隐藏也照常跑）
+  ├─ 每站点 Promise.allSettled 并发 → 适配器 getBalance()
+  │    ├─ sub2api 网关: GET <base>/auth/me（Bearer access_token）
+  │    │     401 → POST <base>/auth/refresh（refresh_token 会轮换，新值写回该站点）→ 重试一次
+  │    └─ DeepSeek 官方: GET <base>/user/balance（Bearer API Key；币种随响应返回 CNY/USD）
+  ├─ 状态快照 → ① pushState → 余额小窗渲染层（ev:balance-state）
+  │             ② BalanceNotifier：仅状态切换沿发系统通知（Token 失效 / 余额恢复）
+  └─ 保存站点：先落盘再立即实测验证（验证失败也保留配置，列表里显示错误态）
+```
+
+### 每站点状态机（`balance/scheduler.ts`，互不影响）
+
+```
+no-token ──saveSite──▶ loading ──成功──▶ ok
+   ▲                      │                 │
+   └──未启用/清空凭据──────┼──凭据失效──▶ auth-error（需用户重新粘贴）
+                          ├──网络失败──▶ network-error（下个周期自动重试）
+                          └──响应异常──▶ api-error（下个周期自动重试）
+ok/*-error ──定时/手动刷新──▶ loading        disabled：站点停用，不参与轮询
+```
+
+### 站点适配器契约（`balance/providers/`）
+
+新增一类站点三步：实现 `BalanceProvider`（`getBalance` 抛 Setup/Auth/Network/Api 四种 `ProviderError`）→ 在 `ADAPTERS` 注册（键 = 站点 type）→ 需要预置默认站点时改 `store.ts` 的 DEFAULTS。同类站点的多个实例不需要新适配器（用户在界面里填地址与 Token）。凭据只存在于主进程；`describe*` 交给渲染层的描述对象**不含任何凭据字段**（有单测断言）。
+
+### 与 token-balance 的差别（本轮合并的显式取舍）
+
+| 事项 | 原版 | 合并后 |
+|---|---|---|
+| 配置位置 | 项目根 `config.json`（打包进 asar 后只读 → 写失败） | `%APPDATA%/chatdeck/balance.user.json`（原子写：临时文件 + rename） |
+| 窗口层级 | `screen-saver` | `floating`（与悬浮窗/鲸鱼一致，不盖系统托盘/输入法） |
+| 托盘 | 自带托盘（站点管理 / 立即刷新 / 显隐 / 开机自启 / 退出） | 只用 ChatDeck 托盘一项「余额监控」开关（勾选态跟随显隐）；其余入口在窗口内（右键胶囊 = 站点管理） |
+| 开机自启 | 独立开关 | 交给 ChatDeck 设置窗口已有开关（避免双份注册表写入） |
+| 浏览器 Mock 预览 | 有（preload 失效时静默显示假数据） | 去掉（避免误导） |
+| 通知文案 | "请点击悬浮窗…" | "请点击余额小窗…"（ChatDeck 里悬浮窗是另一个窗口） |
+
+保留不变：5 分钟轮询与手动刷新、保存后实测验证、sub2api token 轮换写回、DeepSeek 币种、状态切换沿通知、拖动位置记忆 + 屏幕内硬约束 + 反 Aero Snap、按内容自适应尺寸、币种符号与全部中文文案、"Token Balance" 品牌文案。
+
 ## 划词翻译（Ctrl+Q · 百度翻译 API）
 
 依附悬浮窗的一条全局热键链路：
@@ -186,6 +235,7 @@ userData/providers.user.json     ─┘   (覆盖 + 自定义 + 删除)
 - 写入原子化：先写 `.tmp` 再 rename（见 `jsonStore.ts`）。
 - 内置默认不可真删，只能停用/覆盖；自定义条目附加在尾部。
 - 鲸鱼的调参常量（行为权重/物理/动画/性能）是代码内配置：`src/shared/whaleConfig.ts`（逐值移植自 whale-pet `config.json`，类型化；主进程只读 `performance.cursorPollMs`）。
+- 余额监控是**单文件配置**（无默认+用户层合并）：`userData/balance.user.json` 由 `BalanceStore` 直接读写（`{refreshIntervalMinutes, window:{x,y,visible}, sites:[…]}`），旧的单站点格式 `{provider, providers}` 首次加载时自动迁移为 `sites` 数组（凭据无损，有单测）。
 
 ## 状态机
 
@@ -222,18 +272,20 @@ chat ⇄ prompts：站点视图矩形 ⇄ 零矩形隐藏挂载（HTML 提示词
 ## 目录说明
 
 ```
-resources/            内置默认配置 + 错误页 + 托盘图标（打包时需 extraResources）
+resources/            内置默认配置 + 错误页 + 托盘图标 + 余额通知图标（打包时需 extraResources）
 scripts/              开发期工具（make-icon.mjs 生成应用/托盘图标；patch-electron-vite.mjs 给 dev watcher 空重建打守卫补丁，postinstall 自动执行）
 build/                打包资源（icon.ico，electron-builder 默认 buildResources 目录）
-src/shared/           前后端共享：类型、IPC 常量、纯函数（merge/viewState/prompts/floatLayout/translate）、鲸鱼配置、API 接口
+src/shared/           前后端共享：类型、IPC 常量、纯函数（merge/viewState/prompts/floatLayout/translate/balance）、鲸鱼配置、API 接口
 src/main/             主进程：floatWindow、whaleWindow、settingsWindow、translateWindow、translateService、textCapture、tray、ViewManager、IPC、两个 store
-src/preload/          contextBridge：index.ts（主 API，四个渲染层共用）、error.ts（错误页重试）
-src/renderer/         界面：whale.html（鲸鱼）+ float.html（悬浮窗）+ settings.html（设置窗口）+ translate.html（译文弹窗）
+src/main/balance/     余额监控主进程：store（配置读写/迁移）、providers/*（sub2api 与 DeepSeek 适配器 + 注册表）、scheduler（轮询 + 每站点状态机）、notify（状态切换沿通知）、window（小窗控制器）
+src/preload/          contextBridge：index.ts（主 API，五个渲染层共用）、error.ts（错误页重试）
+src/renderer/         界面：whale.html（鲸鱼）+ float.html（悬浮窗）+ balance.html（余额小窗）+ settings.html（设置窗口）+ translate.html（译文弹窗）
 src/renderer/src/whale/     鲸鱼渲染层：app/states/whale/particles/runtime/tween/fsm/context/badge（纯 TS,无 Vue）
+src/renderer/src/balance/   余额小窗渲染层：widget（胶囊/列表/编辑卡片）、icons（品牌图标路径）、style.css（原样移植,纯 TS,无 Vue）
 src/renderer/src/float/     悬浮窗渲染层：floatStore + FloatApp/FloatHeader/FloatPrompts
 src/renderer/src/settings/  设置窗口渲染层：SettingsApp（标签页壳,复用 components/ 下面板）
 src/renderer/src/translate/ 译文弹窗渲染层：TranslatePopup
-tests/                Vitest 单测（shared 纯函数 + 主进程 store/ViewManager + 鲸鱼 runtime 与行为状态机移植套件，127 个用例）
+tests/                Vitest 单测（shared 纯函数 + 主进程 store/ViewManager + 鲸鱼 runtime 与行为状态机移植套件 + 余额适配器与调度器移植套件，163 个用例）
 ```
 
 ## 打包与分发（electron-builder）
@@ -244,9 +296,10 @@ tests/                Vitest 单测（shared 纯函数 + 主进程 store/ViewMan
 app.asar（out/** 打包）        安装目录/resources/（extraResources 平铺）
 ├─ out/main/index.js           ├─ providers.default.json   ← resourceFile() 读这里
 ├─ out/preload/{index,error}.js ├─ prompts.default.json       (process.resourcesPath)
-└─ out/renderer/{whale,float,settings,translate}.html
+└─ out/renderer/{whale,float,balance,settings,translate}.html
                                └─ error.html            ← viewManager.errorPagePath()
                                   └─ tray.png / tray@2x.png ← tray.ts 读这里
+                                  └─ balance-icon.png      ← 余额通知图标
 ```
 
 - 产物：`dist/ChatDeck-<ver>-Portable.exe`（免安装双击即用）与 `dist/ChatDeck-Setup-<ver>.exe`（一键安装，per-user）。
@@ -263,13 +316,18 @@ app.asar（out/** 打包）        安装目录/resources/（extraResources 平�
 
 - `providers.user.json` / `prompts.user.json`：用户配置层
 - `float-state.json`：悬浮窗位置 x/y、活动站点
+- `balance.user.json`：余额监控站点（含凭据）+ 小窗位置 x/y + 显隐状态（**明文 JSON，与原版一致**；此文件不在源码仓库内）
 - `translate.user.json`：百度翻译 APPID/KEY、语言方向对
 - `Partitions/provider-*`：各站点的登录数据（cookie/localStorage）
 - `ui-state.json`：已废弃（桌面版布局残留），不再读写；可手动删除
 
 ## 测试
 
-- `npm run typecheck`：`tsconfig.node.json`（主进程/preload/shared）+ `tsconfig.web.json`（渲染层）+ `tsconfig.test.json`（测试，含 DOM 类型）。
-- `npm test`：127 用例。鲸鱼部分移植自 whale-pet 的 `runtime.test.js` / `animation.test.js`，用独立对照（临界阻尼解析解、RK4 积分、de Casteljau 曲线、细分离线弧长）与边界用例（0/负尺寸工作区、离屏起点、极值缩放、抖动刷新率）验证移植保真：
-  - `tests/whaleRuntime.test.ts`：输入状态机、光标采样过期规则、弹簧/摆尾相位、泳路规划、投掷限幅、帧调度器、粒子轨迹与对象池、tween/FSM 取消语义。
-  - `tests/whaleStates.test.ts`：编排过渡不跳变、按压取消不重置形状、泳路完成与中途取消、形变有界与命中几何、入水事件取消、水线同步清除、短弧旋转恢复、surface 定点浮出。
+- `npm run typecheck`：`tsconfig.node.json`（主进程/preload/shared）+ `tsconfig.web.json`（渲染层）+ `tsconfig.test.json`（测试，含 DOM 与主进程业务模块的类型）。
+- `npm test`：163 用例。
+  - 鲸鱼部分移植自 whale-pet 的 `runtime.test.js` / `animation.test.js`，用独立对照（临界阻尼解析解、RK4 积分、de Casteljau 曲线、细分离线弧长）与边界用例（0/负尺寸工作区、离屏起点、极值缩放、抖动刷新率）验证移植保真：
+    - `tests/whaleRuntime.test.ts`：输入状态机、光标采样过期规则、弹簧/摆尾相位、泳路规划、投掷限幅、帧调度器、粒子轨迹与对象池、tween/FSM 取消语义。
+    - `tests/whaleStates.test.ts`：编排过渡不跳变、按压取消不重置形状、泳路完成与中途取消、形变有界与命中几何、入水事件取消、水线同步清除、短弧旋转恢复、surface 定点浮出。
+  - 余额部分移植自 token-balance 的 `test-provider-shapes.js` / `test-deepseek.js` / `test-multi-site.js`（原为独立 node 脚本 + `Module._resolveFilename` 打补丁，现在改为构造参数注入临时配置路径）：
+    - `tests/balanceProviders.test.ts`：两个协议的成功/嵌套/平铺形态、余额 0 与字符串余额、code≠0、字段缺失、非 JSON、401→续期→重试、续期失败、凭据缺失（setup）、轮换凭据回调。
+    - `tests/balanceScheduler.test.ts`：旧格式配置无损迁移、interval 钳制、窗口状态持久化、四站点混合类型并行轮询与独立状态机、断网/停用、保存校验（重复地址/非法地址/留空保持）、删除、类型注册表、描述对象不含凭据（序列化断言）。

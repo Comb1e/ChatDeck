@@ -1,11 +1,16 @@
-import { app, clipboard, ipcMain } from 'electron'
+import { app, clipboard, ipcMain, shell } from 'electron'
 import { IPC } from '@shared/ipc'
 import type { PaneLayoutEntry, Provider, ProviderInput, PromptInput } from '@shared/types'
+import type { BalanceSiteInput } from '@shared/balance'
+import * as balanceProviders from './balance/providers'
 import type { ProviderStore } from './store/providerStore'
 import type { PromptStore } from './store/promptStore'
 import type { ViewManager } from './viewManager'
 import type { FloatWindowController } from './floatWindow'
 import type { WhaleWindowController } from './whaleWindow'
+import type { BalanceStore } from './balance/store'
+import type { BalanceScheduler } from './balance/scheduler'
+import type { BalanceWindowController } from './balance/window'
 import type { SettingsWindowController } from './settingsWindow'
 import type { TranslateService } from './translateService'
 import type { TranslatePopupController } from './translateWindow'
@@ -26,6 +31,9 @@ export interface IpcDeps {
   floatViews: ViewManager
   floatWin: FloatWindowController
   whaleWin: WhaleWindowController
+  balanceStore: BalanceStore
+  balanceScheduler: BalanceScheduler
+  balanceWin: BalanceWindowController
   settingsWin: SettingsWindowController
   translate: TranslateService
   translateWin: TranslatePopupController
@@ -34,8 +42,20 @@ export interface IpcDeps {
 
 /** 注册全部 IPC；主→渲染事件经 hooks 由 viewManager 回调驱动 */
 export function registerIpc(deps: IpcDeps): void {
-  const { providers, prompts, floatViews, floatWin, whaleWin, settingsWin, translate, translateWin, forms } =
-    deps
+  const {
+    providers,
+    prompts,
+    floatViews,
+    floatWin,
+    whaleWin,
+    balanceStore,
+    balanceScheduler,
+    balanceWin,
+    settingsWin,
+    translate,
+    translateWin,
+    forms
+  } = deps
 
   /** 视图懒注册:站点尚未注册进管理器时按 id 补注册 */
   const ensureProviders = async (manager: ViewManager, ids: string[]): Promise<void> => {
@@ -158,6 +178,27 @@ export function registerIpc(deps: IpcDeps): void {
   ipcMain.handle(IPC.ClipboardWrite, (_e, text: string) => {
     clipboard.writeText(String(text ?? ''))
     return true
+  })
+
+  // ---- 余额监控(独立小窗) ----
+
+  ipcMain.handle(IPC.BalanceState, () => balanceScheduler.snapshot())
+  ipcMain.handle(IPC.BalanceDescribeSites, () => balanceProviders.describeAll(balanceStore))
+  ipcMain.handle(IPC.BalanceDescribeNewSite, (_e, type: unknown) =>
+    balanceProviders.describeNewSite(String(type ?? ''))
+  )
+  ipcMain.handle(IPC.BalanceDescribeSiteTypes, () => balanceProviders.describeTypes())
+  ipcMain.handle(IPC.BalanceSaveSite, (_e, site: BalanceSiteInput) =>
+    balanceScheduler.saveSite(site)
+  )
+  ipcMain.handle(IPC.BalanceRemoveSite, (_e, id: string) => balanceScheduler.removeSite(String(id)))
+  ipcMain.handle(IPC.BalanceRefresh, () => balanceScheduler.refreshNow())
+  ipcMain.on(IPC.BalanceOpenUsage, (_e, siteId: unknown) => {
+    const site = balanceStore.getSite(String(siteId ?? ''))
+    if (site?.usageUrl) void shell.openExternal(site.usageUrl)
+  })
+  ipcMain.on(IPC.BalanceResize, (_e, size: { width?: unknown; height?: unknown }) => {
+    balanceWin.setContentSize(Number(size?.width) || 0, Number(size?.height) || 0)
   })
 
   // ---- 划词翻译 ----

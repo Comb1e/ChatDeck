@@ -2,6 +2,15 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '@shared/ipc'
 import type { DeckApi } from '@shared/api'
 import type { PaneLayoutEntry, PromptInput, ProviderInput, Rect } from '@shared/types'
+import type {
+  BalanceRefreshResult,
+  BalanceSaveResult,
+  BalanceSiteDescription,
+  BalanceSiteDescriptionList,
+  BalanceSiteInput,
+  BalanceSiteTypeInfo,
+  BalanceSnapshot
+} from '@shared/balance'
 import type { TranslateConfig, TranslatePairId, TranslatePopupState } from '@shared/translate'
 
 /**
@@ -53,6 +62,24 @@ const api: DeckApi = {
   clipboard: {
     writeText: (text: string) => ipcRenderer.invoke(IPC.ClipboardWrite, text)
   },
+  balance: {
+    getState: () => ipcRenderer.invoke(IPC.BalanceState) as Promise<BalanceSnapshot>,
+    describeSites: () =>
+      ipcRenderer.invoke(IPC.BalanceDescribeSites) as Promise<BalanceSiteDescriptionList>,
+    describeNewSite: (type: string) =>
+      ipcRenderer.invoke(IPC.BalanceDescribeNewSite, type) as Promise<BalanceSiteDescription>,
+    describeSiteTypes: () =>
+      ipcRenderer.invoke(IPC.BalanceDescribeSiteTypes) as Promise<BalanceSiteTypeInfo[]>,
+    saveSite: (input: BalanceSiteInput) =>
+      ipcRenderer.invoke(IPC.BalanceSaveSite, input) as Promise<BalanceSaveResult>,
+    removeSite: (id: string) =>
+      ipcRenderer.invoke(IPC.BalanceRemoveSite, id) as Promise<{ ok: boolean }>,
+    refreshNow: () =>
+      ipcRenderer.invoke(IPC.BalanceRefresh) as Promise<BalanceRefreshResult>,
+    openUsage: (siteId: string): void => ipcRenderer.send(IPC.BalanceOpenUsage, siteId),
+    resize: (width: number, height: number): void =>
+      ipcRenderer.send(IPC.BalanceResize, { width, height })
+  },
   translate: {
     getConfig: () => ipcRenderer.invoke(IPC.TranslateGetConfig) as Promise<TranslateConfig>,
     saveConfig: (input: { appId: string; appKey: string }) =>
@@ -89,6 +116,11 @@ const api: DeckApi = {
     },
     unread: (cb): void => {
       ipcRenderer.on(IPC.EvWhaleUnread, (_e, payload) => cb(payload))
+    }
+  },
+  onBalance: {
+    state: (cb): void => {
+      ipcRenderer.on(IPC.EvBalanceState, (_e, payload) => cb(payload))
     }
   }
 }

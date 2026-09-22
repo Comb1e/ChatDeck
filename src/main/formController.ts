@@ -38,7 +38,11 @@ export class FormController {
     clearTimeout(this.retireTimer)
     if (this.phase === 'animating' || this.phase === 'handoff') {
       this.phase = 'animating'
-      this.host.hide('float')
+      // 收起进行中(悬浮窗仍可见,等待 covered)反向回悬浮窗:保留 UI 原地不动,外壳自行淡出+倒放;
+      // 已过 covered 的融化期反向则把悬浮窗重新显示(倒放的外壳不再遮挡面板区)。
+      // 其余方向(倒回收起)隐藏悬浮窗是无害兜底(被不透明外壳盖住或本就隐藏)。
+      if (target === 'float') this.host.show('float')
+      else this.host.hide('float')
       this.play()
       return
     }

@@ -143,7 +143,11 @@ export class WhaleWindowController {
     this.syncWorkarea()
     win.setAlwaysOnTop(true, 'floating')
     win.setVisibleOnAllWorkspaces(true)
-    win.show()
+    // 全屏透明覆盖层不该激活:收起时悬浮窗正持有焦点(用户刚点过收起按钮),show() 的
+    // 激活会抢走输入焦点;穿透/点击外壳靠 setIgnoreMouseEvents forward,不需要焦点。
+    // 但必须显式回到悬浮窗上方(showInactive 不改 z 序,外壳会在 UI 背后淡入,形同未见)。
+    win.showInactive()
+    win.moveTop()
     // 不 invalidate():丢弃首帧会让透明窗口在重绘期间闪透明空帧,见 floatWindow.show()
   }
 

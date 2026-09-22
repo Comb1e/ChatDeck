@@ -211,7 +211,7 @@ async function addProvider(): Promise<void> {
       <div class="row general-row">
         <div class="general-info">
           <div class="general-name">账单明细</div>
-          <div class="general-desc">每月使用量等明细;按币种分开统计,sub2api 为站点记账,DeepSeek 为本机计量,百分比额度站点不参与</div>
+          <div class="general-desc">按天/月/年分组、可筛选站点的用量明细,存于本地数据库;sub2api 为站点记账,DeepSeek 为本机计量,火山方舟取计费中心真实账单</div>
         </div>
         <span class="grow" />
         <button class="ghost" @click="openBilling()">打开账单</button>
@@ -251,7 +251,7 @@ async function addProvider(): Promise<void> {
     <section>
       <h3 class="sec-title">关于</h3>
       <p class="about">
-        ChatDeck v0.7.1 · 国内大模型聚合工作台<br />
+        ChatDeck v0.9.0 · 国内大模型聚合工作台<br />
         桌面常驻小鲸鱼（悬浮窗压缩形态）：单击鲸鱼展开面板，鼠标悬浮它会开心跳。<br />
         余额监控小窗：托盘右键「余额监控」开关（站点与 Token 在窗口内管理）。<br />
         每个站点使用独立存储，登录数据仅保存在本机。<br />

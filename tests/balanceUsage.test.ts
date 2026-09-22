@@ -11,10 +11,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { applyObservation, UsageStore, dayKey, type SiteUsageRecord } from '../src/main/balance/usage'
-import { aggregateMonths, buildBillingReport } from '../src/main/balance/billing'
+import { buildBillingReport } from '../src/main/balance/billing'
+import { BillDb } from '../src/main/balance/billdb'
 import { BalanceStore } from '../src/main/balance/store'
 import { BalanceScheduler } from '../src/main/balance/scheduler'
-import type { BillingDay } from '../src/shared/balance'
 
 let tmpDir = ''
 
@@ -174,22 +174,6 @@ describe('UsageStore:持久化与台账管理', () => {
   })
 })
 
-describe('aggregateMonths:逐日 → 逐月聚合', () => {
-  it('独立对照:跨月求和且月份升序;空数组得空表', () => {
-    const days: BillingDay[] = [
-      { date: '2026-09-02', used: 1 },
-      { date: '2026-08-30', used: 2.5 },
-      { date: '2026-09-18', used: 0.25 },
-      { date: '2026-08-01', used: 0.25 }
-    ]
-    expect(aggregateMonths(days)).toEqual([
-      { month: '2026-08', used: 2.75 },
-      { month: '2026-09', used: 1.25 }
-    ])
-    expect(aggregateMonths([])).toEqual([])
-  })
-})
-
 function stubUsageFetch(): void {
   vi.stubGlobal('fetch', async (url: string) => {
     if (url.startsWith('https://s.test/api/v1')) {
@@ -233,6 +217,15 @@ function stubUsageFetch(): void {
         })
       }
     }
+    // 火山计费中心:2026-08 有一笔 ¥9.90 账单(与真实探针同构),其余账期为空
+    if (url.startsWith('https://billing.volcengineapi.com') && url.includes('Action=ListBillDetail')) {
+      const period = new URL(url).searchParams.get('BillPeriod')
+      const list =
+        period === '2026-08'
+          ? [{ ExpenseDate: '2026-08-26', PayableAmount: '9.90', Currency: 'CNY', Product: 'ark_bd' }]
+          : []
+      return { status: 200, json: async () => ({ ResponseMetadata: {}, Result: { List: list, Total: list.length } }) }
+    }
     throw new Error('unexpected url ' + url)
   })
 }
@@ -247,12 +240,14 @@ function seedStore(): BalanceStore {
 }
 
 describe('buildBillingReport:账单报告', () => {
-  it('sub2api=站点记账(api);volcark 进 excluded;未配置站点跳过', async () => {
+  it('sub2api=站点记账(api);volcark=计费中心真实账单(volcbill,CNY);未配置站点跳过', async () => {
     stubUsageFetch()
     const store = seedStore()
     const usage = new UsageStore(null)
+    const bills = new BillDb(null)
+    await bills.ready()
     usage.recordApiUsed('sp', 'USD', 159.89, '2026-09-21T00:00:00Z')
-    const report = await buildBillingReport({ store, usage }, new Date(2026, 8, 21, 12, 0, 0))
+    const report = await buildBillingReport({ store, usage, bills }, new Date(2026, 8, 21, 12, 0, 0))
     const sp = report.sites.find((s) => s.id === 'sp')
     expect(sp).toMatchObject({ source: 'api', currency: 'USD', usedTotal: 159.89, since: '2026-08-14' })
     expect(sp?.months).toEqual([
@@ -260,33 +255,49 @@ describe('buildBillingReport:账单报告', () => {
       { month: '2026-09', used: 21.79 }
     ])
     expect(sp?.recent.map((d) => d.date)).toEqual(['2026-09-18', '2026-09-21']) // 08-14 在 30 天窗口外
-    expect(report.excluded).toEqual(['火山方舟'])
+    // 火山:计费中心数据只进账单窗口;2026-08-26 在近 30 天窗口内,按天/月/年同源可查
+    const vk = report.sites.find((s) => s.id === 'vk')
+    expect(vk).toMatchObject({
+      source: 'volcbill',
+      currency: 'CNY',
+      usedTotal: 9.9,
+      since: '2026-08-26'
+    })
+    expect(vk?.months).toEqual([{ month: '2026-08', used: 9.9 }])
+    expect(vk?.recent).toEqual([{ date: '2026-08-26', used: 9.9 }])
+    expect(vk?.years).toEqual([{ year: '2026', used: 9.9 }])
+    expect(report.excluded).toEqual([])
     expect(report.sites.some((s) => s.id === 'nc')).toBe(false) // 未配置不出现
-    expect(report.sites.some((s) => s.id === 'vk')).toBe(false)
   })
 
-  it('DeepSeek=本机计量(metered),6 个月窗口外的旧日不进月表但计入累计', async () => {
+  it('DeepSeek=本机计量(metered),24 个月窗口含历史月,旧日计入月表与累计', async () => {
     stubUsageFetch()
     const store = seedStore()
     const usage = new UsageStore(tmpFile('u.json'))
-    // 基线 88.5 → 3 月降 4.5(窗口外) → 9 月两日各降 4(窗口内)
+    const bills = new BillDb(null)
+    await bills.ready()
+    // 基线 88.5 → 3 月降 4.5(在 24 个月窗口内) → 9 月两日各降 4(窗口内)
     usage.apply('ds', 'CNY', 88.5, '2026-03-01')
     usage.apply('ds', 'CNY', 84, '2026-03-15')
     usage.apply('ds', 'CNY', 80, '2026-09-19')
     usage.apply('ds', 'CNY', 76, '2026-09-21')
-    const report = await buildBillingReport({ store, usage }, new Date(2026, 8, 21, 12, 0, 0))
+    const report = await buildBillingReport({ store, usage, bills }, new Date(2026, 8, 21, 12, 0, 0))
     const ds = report.sites.find((s) => s.id === 'ds')
     expect(ds).toMatchObject({
       source: 'metered',
       currency: 'CNY',
-      usedTotal: 12.5, // 累计含窗口外
+      usedTotal: 12.5, // 累计=月表合计(全部都在 24 个月窗口内)
       since: '2026-03-01'
     })
-    expect(ds?.months).toEqual([{ month: '2026-09', used: 8 }]) // 月表只收窗口内
+    expect(ds?.months).toEqual([
+      { month: '2026-03', used: 4.5 },
+      { month: '2026-09', used: 8 }
+    ])
+    expect(ds?.years).toEqual([{ year: '2026', used: 12.5 }])
     expect(ds?.recent.map((d) => d.date)).toEqual(['2026-09-19', '2026-09-21'])
   })
 
-  it('站点趋势接口故障:sub2api 回退本机计量,报告不至于整块缺失', async () => {
+  it('站点趋势接口故障:回退库内 api 数据,连历史都没有才回退本机计量并标注', async () => {
     vi.stubGlobal('fetch', async (url: string) => {
       if (url.startsWith('https://s.test/api/v1') && url.endsWith('/auth/me')) {
         return { status: 200, json: async () => ({ code: 0, data: { balance: 5 } }) }
@@ -295,14 +306,20 @@ describe('buildBillingReport:账单报告', () => {
     })
     const store = seedStore()
     const usage = new UsageStore(null)
+    const bills = new BillDb(null)
+    await bills.ready()
     usage.apply('sp', 'USD', 10, '2026-09-20')
     usage.apply('sp', 'USD', 7, '2026-09-21')
-    const report = await buildBillingReport({ store, usage }, new Date(2026, 8, 21, 12, 0, 0))
+    const report = await buildBillingReport({ store, usage, bills }, new Date(2026, 8, 21, 12, 0, 0))
     const sp = report.sites.find((s) => s.id === 'sp')
     expect(sp).toMatchObject({ source: 'metered', usedTotal: 3 })
     expect(sp?.months).toEqual([{ month: '2026-09', used: 3 }])
     // 有 getUsage 能力的站点回退时必须标注,避免"本机计量 0.00"被误读成从未用过
     expect(sp?.note).toContain('站点用量接口暂不可用')
+    // 反例:volcark 的计费中心同样失联,但站点仍出现(空数据+失败说明),不再被整体排除
+    const vk = report.sites.find((s) => s.id === 'vk')
+    expect(vk?.source).toBe('volcbill')
+    expect(vk?.note).toContain('计费中心查询失败')
   })
 
   it('趋势接口先失败后成功:重试一次即恢复 api 口径', async () => {
@@ -326,8 +343,10 @@ describe('buildBillingReport:账单报告', () => {
     })
     const store = seedStore()
     const usage = new UsageStore(null)
+    const bills = new BillDb(null)
+    await bills.ready()
     usage.recordApiUsed('sp', 'USD', 12.5, '2026-09-21T00:00:00Z')
-    const report = await buildBillingReport({ store, usage }, new Date(2026, 8, 21, 12, 0, 0))
+    const report = await buildBillingReport({ store, usage, bills }, new Date(2026, 8, 21, 12, 0, 0))
     const sp = report.sites.find((s) => s.id === 'sp')
     expect(trendCalls).toBe(2) // 失败一次 + 重试一次
     expect(sp).toMatchObject({ source: 'api', usedTotal: 12.5 })

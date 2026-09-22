@@ -51,11 +51,6 @@ function toggleBalance(): void {
           <path d="M9 3h4v4M7 13H3V9M13 3l-5 5M3 13l5-5" />
         </svg>
       </button>
-      <button class="wbtn" title="收起为鲸鱼" @click="collapse()">
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4">
-          <path d="M4 4l8 8M12 4l-8 8" />
-        </svg>
-      </button>
     </div>
 
     <div class="row provs">

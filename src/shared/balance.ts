@@ -32,8 +32,9 @@ export type BalanceSiteStatus =
  * 站点"已用"数据的来源：
  * - api:站点自身记账(如 sub2api /usage/dashboard/stats 的 total_actual_cost,含赠送额度的消耗)
  * - metered:本机按"余额下降量"计量(DeepSeek 等无用量接口的站点,充值当期会低估,统计自首次观测)
+ * - volcbill:云厂商计费中心真实账单(火山方舟:仅进账单窗口,不进余额小窗的"已用")
  */
-export type BalanceUsedSource = 'api' | 'metered'
+export type BalanceUsedSource = 'api' | 'metered' | 'volcbill'
 
 /** 调度器对外推送的每站点运行状态（不含凭据） */
 export interface BalanceSiteState {
@@ -158,6 +159,12 @@ export interface BillingMonth {
   used: number
 }
 
+/** 单年用量(YYYY) */
+export interface BillingYear {
+  year: string
+  used: number
+}
+
 /** 账单里一个站点的用量报告 */
 export interface BillingSiteReport {
   id: string
@@ -165,23 +172,25 @@ export interface BillingSiteReport {
   icon: string
   currency: string
   source: BalanceUsedSource
-  /** 累计已用(api=最近一次站点记账;metered=本机计量累计) */
+  /** 累计已用(api=最近一次站点记账;metered=本机计量累计;volcbill=库内真实账单合计) */
   usedTotal: number
-  /** 统计起始日(YYYY-MM-DD):metered=首次计量日;api=趋势数据最早一天 */
+  /** 统计起始日(YYYY-MM-DD):metered=首次计量日;api=趋势数据最早一天;volcbill=库内最早账单日 */
   since: string | null
-  /** 逐月用量(旧→新,最多近 6 个自然月) */
+  /** 逐月用量(旧→新,最多近 24 个自然月,与本地账单库同步窗口一致) */
   months: BillingMonth[]
-  /** 近 30 天逐日用量(旧→新) */
+  /** 近 30 天逐日用量(旧→新;"按天"粒度视图) */
   recent: BillingDay[]
+  /** 按年用量(旧→新;"按年"粒度视图) */
+  years: BillingYear[]
   /** 补充说明(如"站点接口暂不可用,已回退本机计量"——此时数字与实际用量可能差很多) */
   note?: string
 }
 
-/** 账单窗口数据(billing:get 的载荷;主进程现拉现算,不持久化) */
+/** 账单窗口数据(billing:get 的载荷;主进程先同步进本地账单库,再从库聚合) */
 export interface BillingReport {
   generatedAt: string
-  /** 参与统计的站点(货币类) */
+  /** 参与统计的站点(货币类 + 计费中心账单类) */
   sites: BillingSiteReport[]
-  /** 不参与统计的站点名(百分比额度类,如火山方舟) */
+  /** 不参与统计的站点名(如未配置计费中心取数的百分比额度站点) */
   excluded: string[]
 }

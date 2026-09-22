@@ -217,6 +217,16 @@ export class BalanceScheduler {
     return { ok: true }
   }
 
+  /** 仅调整展示顺序:不触发轮询,立即重排状态列表并推送(胶囊与列表顺序跟随) */
+  async moveSite(id: string, delta: -1 | 1): Promise<{ ok: boolean }> {
+    const before = this.store.getSites().map((s) => s.id).join('\n')
+    const after = this.store.moveSite(id, delta).map((s) => s.id).join('\n')
+    if (before === after) return { ok: false }
+    this.syncSiteList()
+    this.publish()
+    return { ok: true }
+  }
+
   async refreshNow(): Promise<BalanceRefreshResult> {
     try {
       await this.tick()

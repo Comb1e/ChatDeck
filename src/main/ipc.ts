@@ -260,6 +260,9 @@ export function registerIpc(deps: IpcDeps): void {
     balanceScheduler.saveSite(site)
   )
   ipcMain.handle(IPC.BalanceRemoveSite, (_e, id: string) => balanceScheduler.removeSite(String(id)))
+  ipcMain.handle(IPC.BalanceMoveSite, (_e, id: unknown, delta: unknown) =>
+    balanceScheduler.moveSite(String(id ?? ''), delta === -1 ? -1 : 1)
+  )
   ipcMain.handle(IPC.BalanceRefresh, () => balanceScheduler.refreshNow())
   ipcMain.on(IPC.BalanceToggle, (_e, mode: unknown) => {
     if (mode === 'show') void balanceWin.show()

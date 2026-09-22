@@ -81,6 +81,8 @@ const api: DeckApi = {
       ipcRenderer.invoke(IPC.BalanceSaveSite, input) as Promise<BalanceSaveResult>,
     removeSite: (id: string) =>
       ipcRenderer.invoke(IPC.BalanceRemoveSite, id) as Promise<{ ok: boolean }>,
+    moveSite: (id: string, delta: -1 | 1) =>
+      ipcRenderer.invoke(IPC.BalanceMoveSite, id, delta) as Promise<{ ok: boolean }>,
     refreshNow: () =>
       ipcRenderer.invoke(IPC.BalanceRefresh) as Promise<BalanceRefreshResult>,
     toggle: (mode?: 'show'): void => ipcRenderer.send(IPC.BalanceToggle, mode),

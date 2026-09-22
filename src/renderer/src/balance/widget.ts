@@ -251,10 +251,23 @@ function renderList(sites: BalanceSiteState[]): void {
     // 刷新中整行加 loading:值文字走闪烁动画,让"点了刷新"有可见反馈
     row.className = `site-row${s.status === 'loading' ? ' loading' : ''}`
     row.title = `点击编辑「${s.label}」`
+    // 多站点时给每行 ▲▼ 调序按钮:顺序即胶囊与列表的展示序,点击立即持久化并重排
+    const sortable = sites.length > 1
+    const chevron = (up: boolean): string =>
+      up
+        ? '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 5.2 18.8 12h-4.3v6.8H9.5V12H5.2L12 5.2z"/></svg>'
+        : '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 18.8 5.2 12h4.3V5.2h5v6.8h4.3L12 18.8z"/></svg>'
+    const sortBtns = sortable
+      ? `<div class="row-sort">` +
+        `<button class="sort-btn" data-delta="-1" title="上移" aria-label="上移 ${escapeHtml(s.label)}"${i === 0 ? ' disabled' : ''}>${chevron(true)}</button>` +
+        `<button class="sort-btn" data-delta="1" title="下移" aria-label="下移 ${escapeHtml(s.label)}"${i === sites.length - 1 ? ' disabled' : ''}>${chevron(false)}</button>` +
+        `</div>`
+      : ''
     row.innerHTML =
       `<svg class="row-icon${s.status === 'loading' ? ' spin' : ''}" viewBox="0 0 24 24" aria-hidden="true"><path fill="#D97757" d="${iconById(s.icon).d}"/></svg>` +
       `<div class="row-main"><div class="row-label">${escapeHtml(s.label)}${s.enabled ? '' : '(停用)'}</div>` +
       `<div class="row-sub${['network-error', 'api-error'].includes(s.status) ? ' error' : ''}">${escapeHtml(sub)}</div></div>` +
+      sortBtns +
       `<div class="row-right"><span class="row-value ${cls}">${text}</span><span class="dot ${dot}"></span>` +
       `<button class="row-link" title="打开 Usage 页" aria-label="打开 ${escapeHtml(s.label)} Usage 页">` +
       `<svg viewBox="0 0 24 24"><path fill="currentColor" d="M14 3h7v7h-2V6.4l-9.3 9.3-1.4-1.4L17.6 5H14V3zM5 5h6v2H7v10h10v-4h2v6H5V5z"/></svg></button></div>`
@@ -263,6 +276,12 @@ function renderList(sites: BalanceSiteState[]): void {
     link?.addEventListener('click', (e) => {
       e.stopPropagation()
       api.openUsage(s.id)
+    })
+    row.querySelectorAll<HTMLButtonElement>('.sort-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation() // 别触发整行的「点击编辑」
+        void api.moveSite(s.id, Number(btn.dataset.delta) === -1 ? -1 : 1)
+      })
     })
     row.addEventListener('click', () => openEdit(s.id))
     els.siteRows.appendChild(row)

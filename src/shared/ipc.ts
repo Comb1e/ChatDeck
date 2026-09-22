@@ -58,6 +58,8 @@ export const IPC = {
   BalanceDescribeSiteTypes: 'balance:describe-site-types',
   BalanceSaveSite: 'balance:save-site',
   BalanceRemoveSite: 'balance:remove-site',
+  /** 调整站点顺序(渲染层 ▲▼ 按钮;胶囊与列表顺序跟随 sites 数组序) */
+  BalanceMoveSite: 'balance:move-site',
   BalanceRefresh: 'balance:refresh',
   BalanceOpenUsage: 'balance:open-usage',
   /** 打开/关闭余额小窗(悬浮窗头部与设置窗口的入口;托盘勾选态跟随) */

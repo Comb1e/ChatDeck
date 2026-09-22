@@ -347,7 +347,7 @@ tests/                Vitest 单测（shared 纯函数 + 主进程 store/ViewMan
 `npm run dist` = `electron-vite build` + `electron-builder --win`，配置在 `electron-builder.yml`：
 
 ```
-app.asar（out/** 打包）        安装目录/resources/（extraResources 平铺）
+app.asar（仅编译后的应用文件） 安装目录/resources/（extraResources 平铺）
 ├─ out/main/index.js           ├─ providers.default.json   ← resourceFile() 读这里
 ├─ out/preload/{index,error}.js ├─ prompts.default.json       (process.resourcesPath)
 └─ out/renderer/{whale,float,balance,billing,settings,translate}.html
@@ -357,6 +357,7 @@ app.asar（out/** 打包）        安装目录/resources/（extraResources 平�
 ```
 
 - 产物：`dist/ChatDeck-<ver>-Portable.exe`（免安装双击即用）与 `dist/ChatDeck-Setup-<ver>.exe`（一键安装，per-user）。
+- 归档范围固定为 `out/main/**`、`out/preload/**`、`out/renderer/**`；`out/` 下的诊断脚本、录制和隔离测试配置不进入安装包。
 - 关键约束：extraResources 的 `to` 必须是 `.`（写成 `resources` 会多套一层，运行时读不到）。
 - userData 不变（`%APPDATA%/chatdeck`），打包版与开发版登录态互通。
 - 单实例锁在打包版同样生效：重复启动唤起鲸鱼（压缩形态）。
@@ -378,7 +379,7 @@ app.asar（out/** 打包）        安装目录/resources/（extraResources 平�
 ## 测试
 
 - `npm run typecheck`：`tsconfig.node.json`（主进程/preload/shared）+ `tsconfig.web.json`（渲染层）+ `tsconfig.test.json`（测试，含 DOM 与主进程业务模块的类型）。
-- `npm test`：178 用例。
+- `npm test`：219 用例。
   - 鲸鱼部分移植自 whale-pet 的 `runtime.test.js` / `animation.test.js`，用独立对照（临界阻尼解析解、RK4 积分、de Casteljau 曲线、细分离线弧长）与边界用例（0/负尺寸工作区、离屏起点、极值缩放、抖动刷新率）验证移植保真：
     - `tests/whaleRuntime.test.ts`：输入状态机、光标采样过期规则、弹簧/摆尾相位、泳路规划、投掷限幅、帧调度器、粒子轨迹与对象池、tween/FSM 取消语义。
     - `tests/whaleStates.test.ts`：编排过渡不跳变、按压取消不重置形状、泳路完成与中途取消、形变有界与命中几何、入水事件取消、水线同步清除、短弧旋转恢复、surface 定点浮出。

@@ -4,6 +4,10 @@ export const FORM_CONFIG = {
   durationMs: 700,
   mouthMs: 200,
   readyTimeoutMs: 2000,
+  /** 收起方向:外壳在真实悬浮窗上方淡入盖满的时长,盖满后主进程才隐藏悬浮窗 */
+  coverMs: 140,
+  /** 展开完成到清空/隐藏鲸鱼窗口的延迟:给悬浮窗的 DWM 显示过渡留足时间,避免露出半透明中间态 */
+  retireDelayMs: 300,
   inset: { x: 24, y: 24 },
   radius: 18,
   contentColor: '#131824',
@@ -34,6 +38,7 @@ export type FormReport =
   | { type: 'prepared'; id: number }
   | { type: 'complete'; id: number; revision: number; form: Form }
   | { type: 'presented'; id: number; revision: number }
+  | { type: 'covered'; id: number }
 
 export const clamp01 = (n: number): number => Math.max(0, Math.min(1, n))
 export function smooth(n: number): number {

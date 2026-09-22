@@ -144,7 +144,7 @@ export class WhaleWindowController {
     win.setAlwaysOnTop(true, 'floating')
     win.setVisibleOnAllWorkspaces(true)
     win.show()
-    win.webContents.invalidate()
+    // 不 invalidate():丢弃首帧会让透明窗口在重绘期间闪透明空帧,见 floatWindow.show()
   }
 
   private recreate(): void {
@@ -211,10 +211,12 @@ export class WhaleWindowController {
   }
 
   private async loadPage(win: BrowserWindow): Promise<void> {
+    // CHATDECK_WHALE_PINNED=1:钉住模式,鲸鱼不自主游动(形态/截图测试用,见 whale/app.ts)
+    const pinned = process.env.CHATDECK_WHALE_PINNED === '1' ? '?pinned=1' : ''
     if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
-      await win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/whale.html`)
+      await win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/whale.html${pinned}`)
     } else {
-      await win.loadFile(join(__dirname, '../renderer/whale.html'))
+      await win.loadFile(join(__dirname, '../renderer/whale.html'), pinned ? { search: 'pinned=1' } : undefined)
     }
   }
 

@@ -87,8 +87,9 @@ export class FloatWindowController {
       target.setAlwaysOnTop(true, 'floating')
       target.show()
       target.focus()
-      // 透明窗口久跑后 DWM 合成表面可能失效(整窗透明"消失"),强制重绘一次
-      target.webContents.invalidate()
+      // 此处不能 invalidate():它会丢弃刚呈现的帧,透明窗口在逐瓦片重绘期间以透明
+      // 空帧示人,表现为形变交接/显示时整窗"幽灵闪烁"。表面失效由 heal() 在
+      // 锁屏/休眠唤醒/显卡重置等事件后集中处理。
     }
   }
 

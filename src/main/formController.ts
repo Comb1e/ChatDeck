@@ -27,6 +27,7 @@ export class FormController {
   private preparedScene = false
   private captureSent = false
   private timer: ReturnType<typeof setTimeout> | undefined
+  private retireTimer: ReturnType<typeof setTimeout> | undefined
   constructor(private host: FormHost) {}
 
   toggle(): void { this.request(this.target === 'whale' ? 'float' : 'whale') }
@@ -34,6 +35,7 @@ export class FormController {
     if (target === this.target) return
     this.target = target
     this.revision++
+    clearTimeout(this.retireTimer)
     if (this.phase === 'animating' || this.phase === 'handoff') {
       this.phase = 'animating'
       this.host.hide('float')
@@ -82,9 +84,14 @@ export class FormController {
       this.sendPreparation()
     } else if (report.type === 'prepared' && sender === 'whale' && this.phase === 'preparing' && this.preparedScene) {
       this.host.show('whale')
-      this.host.hide('float')
+      // 收起方向(current=float):外壳需先在可见的悬浮窗上方淡入盖满,此刻不能隐藏悬浮窗,
+      // 否则真实 UI 一帧内被空白外壳替换(闪烁);盖满后鲸鱼上报 covered 再隐藏。
+      // 展开方向(current=whale):悬浮窗本就隐藏,立即隐藏是无害兜底。
+      if (this.current !== 'float') this.host.hide('float')
       this.phase = 'animating'
       this.play()
+    } else if (report.type === 'covered' && sender === 'whale' && this.phase === 'animating') {
+      this.host.hide('float')
     } else if (report.type === 'complete' && sender === 'whale' && this.phase === 'animating' && report.revision === this.revision && report.form === this.target) {
       if (report.form === 'whale') this.finish('whale')
       else {
@@ -109,10 +116,23 @@ export class FormController {
     clearTimeout(this.timer)
     this.phase = 'stable'
     this.current = this.target = form
-    this.host.send('whale', { type: 'settle', id: this.id, form, scene: this.scene })
+    if (form === 'float') {
+      // 悬浮窗显示时会播 Windows DWM 显示过渡(~200ms 淡入),而它此刻在鲸鱼窗口(外壳)之下,
+      // 外壳若立刻消失,半透明的过渡中间态直接暴露(整窗幽灵闪烁)。等过渡走完再清空并隐藏鲸鱼。
+      clearTimeout(this.retireTimer)
+      this.retireTimer = setTimeout(() => {
+        this.retireTimer = undefined
+        if (this.phase !== 'stable' || this.current !== 'float') return
+        this.host.send('whale', { type: 'settle', id: this.id, form, scene: this.scene })
+        this.host.hide('whale')
+      }, FORM_CONFIG.retireDelayMs)
+    } else {
+      this.host.send('whale', { type: 'settle', id: this.id, form, scene: this.scene })
+      this.host.hide('float')
+    }
     this.host.show(form)
-    this.host.hide(form === 'float' ? 'whale' : 'float')
   }
+  destroy(): void { clearTimeout(this.timer); clearTimeout(this.retireTimer); this.id++ }
   /** Fail open to a ready form, invalidate old reports, and retain a visible source while rebooting. */
   recover(failed?: Form): void {
     if (failed) this.ready[failed] = false
@@ -130,5 +150,4 @@ export class FormController {
     clearTimeout(this.timer)
     this.timer = setTimeout(() => this.recover(), FORM_CONFIG.readyTimeoutMs)
   }
-  destroy(): void { clearTimeout(this.timer); this.id++ }
 }

@@ -14,6 +14,7 @@ import type { BalanceScheduler } from './balance/scheduler'
 import type { BalanceWindowController } from './balance/window'
 import type { BillingWindowController } from './balance/billing-window'
 import type { UsageStore } from './balance/usage'
+import type { BillDb } from './balance/billdb'
 import { buildBillingReport } from './balance/billing'
 import type { SettingsWindowController } from './settingsWindow'
 import type { TranslateService } from './translateService'
@@ -33,6 +34,7 @@ export interface IpcDeps {
   balanceWin: BalanceWindowController
   billingWin: BillingWindowController
   balanceUsage: UsageStore
+  balanceBills: BillDb
   settingsWin: SettingsWindowController
   translate: TranslateService
   translateWin: TranslatePopupController
@@ -52,6 +54,7 @@ export function registerIpc(deps: IpcDeps): void {
     balanceWin,
     billingWin,
     balanceUsage,
+    balanceBills,
     settingsWin,
     translate,
     translateWin,
@@ -267,7 +270,7 @@ export function registerIpc(deps: IpcDeps): void {
     billingWin.show()
   })
   ipcMain.handle(IPC.BalanceBillingGet, () =>
-    buildBillingReport({ store: balanceStore, usage: balanceUsage })
+    buildBillingReport({ store: balanceStore, usage: balanceUsage, bills: balanceBills })
   )
   ipcMain.on(IPC.BalanceBillingClose, () => {
     billingWin.close()

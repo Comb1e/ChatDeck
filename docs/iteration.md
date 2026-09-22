@@ -1,5 +1,44 @@
 # 迭代记录
 
+## v0.9.0（2026-09-22）
+
+新增：账单明细支持按天/月/年三种粒度并引入本地 SQLite 账单库；火山引擎账单从计费中心（对应控制台「账单总览」页）取真实货币账单，只计入账单明细——coding plan 百分比显示保持原样。账单窗口另加站点筛选（全部/单站点，汇总跟随）。
+
+### 上版问题与方法根因
+
+- 账单报告是"现拉现算"：sub2api 每次开窗都重新拉趋势、火山方舟（PCT 百分比）因无货币数据被整体排除，没有历史沉淀，也就无法做按天/按年的长时间轴视图。
+- 旧报告只聚合 6 个月且逐日数据（`recent`）拉了不展示，粒度只有"月"一级。
+- 火山引擎此前只接了方舟 Coding Plan 的用量百分比（`GetCodingPlanUsage`），真实账单在计费中心（billing.volcengineapi.com），两套 API 签名形态不同（POST 表单版 vs GET 查询串版）。
+- 项目 `dependencies` 一直为空、打包只含 out/* 编译产物，引入 better-sqlite3 这类原生模块要过 MSVC 编译/GitHub 拉 prebuild 两道关，风险高。
+
+### 本版改进
+
+- 新增本地账单库 `balance/billdb.ts`：SQLite 经 sql.js 的 WASM 构建（项目唯一运行时依赖，wasm 随 dist 进包），持久化 `userData/balance.sqlite`，内存库防抖导出 + 原子写。`bill_day` 表每站点×每日×每币种一行，来源三口径 api/metered/volcbill，用 upsert 的 WHERE 表达优先级（metered 不倒灌真实记账）；`bill_sync` 记录已同步账期。
+- 新增计费中心取数 `providers/volcbill.ts`：`ListBillDetail`，`BillPeriod` 单月最多回溯 24 个月，`GroupTerm=2`+`GroupPeriod=1` 按天×产品汇总，金额取应付金额（PayableAmount）；SigV4 GET 查询串版签名与 volcark 的 POST 版共用新提取的 `volcsig.ts` 派生链（volcark 签名本体零改动，独立重推导测试保持通过）。已同步历史月跳过，本月/上月始终重拉。
+- `billing.ts` 重构为"先同步入库、再从库聚合"：sub2api 趋势先按 24 个月请求、被拒退回 6 个月，成功后清区间内 metered 行防双重计数；DeepSeek 本机计量种入库；报告统一从库聚合出近 30 天/近 24 月/按年三组数据，口径徽章增加「计费中心」。
+- 账单窗口：粒度切换（按天/按月/按年）+ 站点筛选条（全部/单站点，汇总与分区跟随筛选）；单站点时筛选条隐藏。
+- 计费中心数据不进余额小窗的"已用"与合计（只进账单窗口），PCT 轮询/显示路径一行未改；查询失败只在账单窗口标注，不影响余额。
+- 设置页账单文案更新；版本 0.9.0；electron-builder files 显式带上 `node_modules/sql.js`。
+
+### 验证结果
+
+- `npm run typecheck` 三工程通过，Vitest **239/239**（新增 billDb 聚合对照/优先级/持久化、volcbill 签名独立重推导/参数表/解析/错误分类/月窗跳过、账单报告 volcbill 参与等 20 例），`npm run build` 通过，主产物保持 `require("sql.js")` 外置。
+- 临时探针实调真实 AK/SK（用后即删）：确认原始字节派生链签名正确（hex 串变体 SignatureDoesNotMatch）、`GroupPeriod` 缺 `GroupTerm` 报 MissingParameter、行含 ExpenseDate/Currency/PayableAmount（2026-08 一笔 ¥9.90 ark_bd 账单）。
+- dev 实测（真数据）：余额胶囊火山方舟 65%（PCT 显示不变）、已用合计不含 PCT；账单窗口三粒度渲染正常，火山分区显示「计费中心」CNY 累计 ¥9.90（与探针一致），汇总 CNY 累计 = 本机计量 + 计费中心；站点筛选与按天视图（30 行逐日）确认可用。
+
+### 遗留问题与验证边界
+
+- `npm run dist` 打包与安装版冒烟未做（用户指示直接提交）；sql.js 在 asar 内读 wasm 的路径依赖 electron-builder 带上 node_modules/sql.js，首次打包时需确认。
+- 计费中心分页循环为防御性（GroupPeriod=1 聚合后每月 ≤31 行，单页 300 上限实际必单页取完），未做多页实测。
+- 账单数据仅供对账参考：火山账单次月 2 日才出全，本月数字偏低属正常；不做产品/实例维度下钻与导出。
+
+### 实际采用的资料
+
+- [火山引擎《签名机制》](https://docs.volcengine.com/docs/6369/67269)：SigV4 派生链与 GET 查询串签名的规范依据（原始字节链 vs hex 串以实测为准）。
+- [volcengine/volc-sdk-nodejs](https://github.com/volcengine/volc-sdk-nodejs) 的 billing 类型定义：ListBillDetail 参数/响应字段交叉核对。
+- [bytedance/agentkit-samples 的 finops skill](https://github.com/bytedance/agentkit-samples/tree/main/skills/byted-volcengine-finops)：账单接口翻页与参数整理参考。
+- [sql.js](https://github.com/sql-js/sql.js)（SQLite 编译为 WASM，npm）：零原生依赖的本地数据库方案。
+
 ## v0.8.1（2026-09-22）
 
 修复（用户反馈）：悬浮窗头部有两个都执行「收起为鲸鱼」的按钮，删除 × 样式那个，只保留一个。

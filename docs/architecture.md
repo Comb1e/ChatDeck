@@ -189,15 +189,24 @@ stateDiagram-v2
   └─ 保存站点：先落盘再立即实测验证（验证失败也保留配置，列表里显示错误态）
 ```
 
-### 账单（`balance/billing.ts` + `billing-window.ts` + billing.html 入口）
+### 账单（`balance/billing.ts` + `balance/billdb.ts` + `billing-window.ts` + billing.html 入口）
 
 「已用」与账单窗口是两条口径（`UsageStore`，台账持久化在 `userData/balance.usage.json`，与用户配置分文件——它是派生数据，清掉即重新计量）：
 
-- **api 口径（站点记账）**：sub2api 网关自带记账，`total_actual_cost` 就是真实累计已用（实测对账：余额+已用 = 累计充值+赠送额度；逐日 trend 求和 == total_actual_cost）。账单窗口打开时现场拉 `GET <base>/usage/dashboard/trend?start_date&end_date`（近 6 个自然月，逐日 actual_cost）按月聚合。
-- **metered 口径（本机计量）**：DeepSeek 无用量接口，按"余额下降量"估算——每次成功观测，比上次低多少记多少（记到当日）；余额上升视为充值不计（充值期间的消耗无法追溯）；币种变化重开台账。统计自首次观测，账单里明确标注"本机计量"。
-- **PCT（火山方舟）**：百分比额度站点不进台账、不进合计、账单 excluded 列表说明。
+- **api 口径（站点记账）**：sub2api 网关自带记账，`total_actual_cost` 就是真实累计已用（实测对账：余额+已用 = 累计充值+赠送额度；逐日 trend 求和 == total_actual_cost）。账单窗口打开时先拉 `GET <base>/usage/dashboard/trend?start_date&end_date`（先按 24 个月请求，被站点接口拒绝则退回 6 个月；逐日 actual_cost）入账单库（source=api），成功后清除请求区间内的本机计量行（api 未上报的日子就是 0，不清会双重计数）。
+- **metered 口径（本机计量）**：DeepSeek 无用量接口，按"余额下降量"估算——每次成功观测，比上次低多少记多少（记到当日）；余额上升视为充值不计（充值期间的消耗无法追溯）；币种变化重开台账。统计自首次观测，账单里明确标注"本机计量"。种入库时 source=metered 只补空行。
+- **volcbill 口径（计费中心真实账单）**：火山方舟用同一套 IAM AK/SK 调计费中心 `ListBillDetail`（billing.volcengineapi.com，service=billing，SigV4 GET 查询串版签名，与 volcark 的 POST 版共用 `volcsig.ts` 派生链），`BillPeriod` 单月最多回溯 24 个月、`GroupTerm=2`+`GroupPeriod=1` 按天×产品汇总（实测 GroupPeriod 必须搭配 GroupTerm）、金额取 `PayableAmount`（应付金额）。**该数据只进账单窗口；余额小窗的 coding plan 百分比显示完全不受影响**（PCT 照常轮询显示，不进"已用"合计）。子账号查账单需 `BillingCenterBillReadOnlyAccess`，主账号天然可查；查询失败只在账单窗口标注，绝不影响 PCT。
 
-账单窗口是第六个渲染入口（billing.html），固定 460×620 无边框透明卡片、关闭即销毁；数据 `balance:billing-get` 现拉现算（可能耗时数秒）。入口三处：卡片操作区「账单」按钮、胶囊"已用"行（点击即开）、设置窗口「账单明细」。
+### 本地账单库（`balance/billdb.ts`，userData/balance.sqlite）
+
+账单明细的统一数据面——SQLite（经 sql.js 的 WASM 构建，零原生依赖；sql.js 是项目唯一的运行时依赖，wasm 随其 dist 目录进包，asar 内正常加载）。两张表：
+
+- `bill_day(site_id, day, currency, amount, source, updated_at, PK(site_id,day,currency))`：每站点×每日×每币种一行（amount 可为负=退款）。写入优先级用一条 upsert 的 WHERE 表达：**metered 不覆盖 api/volcbill**（真实记账优先于本机估算），其余后写覆盖；`clearMeteredRange` 在 api/volcbill 同步成功后清其权威区间内的 metered 行。
+- `bill_sync(site_id, month)`：已完整同步的账期；本月/上月始终重拉（本月持续累加、上月账单次月 2 日才出全）。
+
+sql.js 是内存库，变更后防抖导出字节流原子写盘，`before-quit` 补一次 flushSync；路径由组合根注入，传 null 纯内存（测试用）。
+
+账单窗口（第六个渲染入口，billing.html，固定 460×620 无边框透明卡片、关闭即销毁）：`balance:billing-get` 先同步入库再从库聚合（首次同步火山 24 个月约十几秒，之后只拉本月/上月）。视图两层切换——**粒度**（按天=近 30 天 / 按月=近 24 个月 / 按年=全部）与**站点筛选**（全部/单站点，筛选后汇总与分区跟随）；口径徽章三种：站点记账(api) / 本机计量(metered) / 计费中心(volcbill)。入口三处：卡片操作区「账单」按钮、胶囊"已用"行（点击即开）、设置窗口「账单明细」。
 
 **Usage 页在悬浮窗内打开**（不再调系统浏览器）：`balance:open-usage` → 已有同源站点直接把该视图导航到 Usage 地址（登录态共享、不加标签）；没有则落一个「<站点名> Usage」厂商（桌面 UA；独立持久分区，登录一次长期有效，可在设置删除）→ `forms.expandFloat()` 展开悬浮窗 → `ev:f-usage-open` 通知渲染层补拉 provider 列表后 navigate+activate。ViewManager 为此新增 `navigate(id, url)`（按视图状态机走合法转移后换页）。
 

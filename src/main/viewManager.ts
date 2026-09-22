@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { app, BrowserWindow, session, shell, WebContentsView } from 'electron'
 import { effectiveAutoSleepMinutes } from '@shared/types'
 import type { PaneLayoutEntry, Provider, ViewLoadState } from '@shared/types'
+import type { Rect } from '@shared/types'
 import { canReload, shouldSleepNow, viewTransition, type ViewEvent, type ViewState } from '@shared/viewState'
 
 interface ManagedView {
@@ -408,5 +409,28 @@ export class ViewManager {
   /** 供 IPC 层查询视图状态 */
   getReportedState(id: string): ViewLoadState | null {
     return this.views.get(id)?.reported ?? null
+  }
+
+  /**
+   * 捕获所有已挂载站点视图的快照(收起换形的截图外壳用)。
+   * 单张超时即跳过该视图(外壳内容区短暂露出玻璃底色,可接受的降级);
+   * 全部失败返回空数组,由调用方决定整体兜底。
+   */
+  async captureViews(timeoutMs: number): Promise<{ dataUrl: string; rect: Rect }[]> {
+    const shots: { dataUrl: string; rect: Rect }[] = []
+    for (const mv of this.views.values()) {
+      if (!mv.mountedNonzero || !this.views.get(mv.provider.id)) continue
+      try {
+        const image = await Promise.race([
+          mv.view.webContents.capturePage(),
+          new Promise<null>(resolve => setTimeout(() => resolve(null), timeoutMs))
+        ])
+        if (!image || image.isEmpty()) continue
+        shots.push({ dataUrl: image.toDataURL(), rect: mv.view.getBounds() })
+      } catch {
+        /* 视图可能刚被销毁 */
+      }
+    }
+    return shots
   }
 }

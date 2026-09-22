@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FORM_CONFIG, FormTimeline, type FormCommand, type FormScene, type PetVisual } from '../src/shared/formTransition'
 import { FormController, type FormHost } from '../src/main/formController'
-import { contourBounds, createMorph, contains, panelSkin, petPoint, petSkin, relocateScene } from '../src/shared/whaleSkin'
+import { contourBounds, createMorph, contains, panelSkin, petPoint, petSkin, relocateScene, shotSkin, windowFromPanel } from '../src/shared/whaleSkin'
+import { panelFromWindow } from '../src/shared/floatLayout'
 
 const pet: PetVisual = { x: 500, y: 700, rot: 0, sx: 1, sy: 1, flip: 1, scale: 1,
   sway: 0, tailAngle: 0, gx: 0, gy: 0, expression: 'normal', blink: 1 }
@@ -84,6 +85,36 @@ describe('reversible visual timeline', () => {
   })
 })
 
+describe('snapshot shell endpoint', () => {
+  it('window rect derives from the panel and round-trips with panelFromWindow', () => {
+    const panel = { x: 380, y: 140, width: 360, height: 620 }
+    expect(windowFromPanel(panel)).toEqual({ x: 356, y: 116, width: 384, height: 644 })
+    expect(panelFromWindow(windowFromPanel(panel))).toEqual(panel)
+  })
+  it('snapshot endpoint spans the whole window with collapsed decorations and a transparent body', () => {
+    const skin = shotSkin(scene.panel)
+    expect(contourBounds(skin.body)).toMatchObject({ x: 356, y: 116, width: 384, height: 644 })
+    for (const part of ['tail', 'eye', 'dot', 'cheek'] as const) {
+      expect(contourBounds(skin[part])).toMatchObject({ width: 0, height: 0 })
+    }
+    expect(skin.ink).toBe(1)
+    expect(skin.bodyOpacity).toBe(0)
+  })
+  it('melt crossfades the blue body against the snapshot and lands on the exact pet pose', () => {
+    const sample = createMorph(scene, true)
+    expect(sample(0)).toEqual(petSkin(pet))
+    expect(sample(1).bodyOpacity).toBe(0)
+    for (let i = 0; i <= 100; i++) {
+      const frame = sample(i / 100)
+      expect(frame.bodyOpacity).toBeCloseTo(1 - frame.ink, 9)
+      expect(frame.bodyOpacity).toBeGreaterThanOrEqual(0)
+      expect(frame.bodyOpacity).toBeLessThanOrEqual(1)
+      for (const point of frame.tail) expect(Number.isFinite(point.x + point.y)).toBe(true)
+    }
+    expect(contourBounds(sample(1).body)).toMatchObject({ x: 356, y: 116, width: 384, height: 644 })
+  })
+})
+
 function setup(ready = true): { controller: FormController; host: FormHost; commands: Array<{ form: string; command: FormCommand }>; visible: Set<string> } {
   vi.useFakeTimers()
   const commands: Array<{ form: string; command: FormCommand }> = [], visible = new Set(['whale'])
@@ -91,7 +122,8 @@ function setup(ready = true): { controller: FormController; host: FormHost; comm
     ensure: vi.fn(), send: (form, command) => commands.push({ form, command }),
     show: form => { visible.add(form) }, hide: form => { visible.delete(form) },
     panel: () => scene.panel, placePanel: () => scene.panel,
-    workarea: () => scene.workarea, stage: vi.fn()
+    workarea: () => scene.workarea, stage: vi.fn(),
+    captureFloat: vi.fn(async () => null), repaint: vi.fn()
   }
   const controller = new FormController(host)
   if (ready) { controller.rendererReady('float'); controller.rendererReady('whale') }
@@ -180,13 +212,14 @@ describe('native form coordinator', () => {
     expect(h.commands).toHaveLength(0)
     expect([...h.visible]).toEqual(['whale'])
   })
-  it('keeps the live panel on screen during collapse until the whale reports covered', () => {
+  it('keeps the live panel on screen during collapse until the whale reports covered', async () => {
     const h = setup(), token = start(h)
     h.controller.report({ type: 'complete', ...token, form: 'float' }, 'whale')
     h.controller.report({ type: 'presented', ...token }, 'float')
     vi.advanceTimersByTime(FORM_CONFIG.retireDelayMs)
     expect([...h.visible]).toEqual(['float'])
     h.controller.request('whale')
+    await vi.advanceTimersByTimeAsync(0) // 整窗快照捕获(promise)排空后才会发出 prepare
     h.controller.report({ type: 'prepared', id: h.commands.at(-1)!.command.id }, 'whale')
     // 外壳淡入盖满之前,真实悬浮窗必须保持可见(隐藏它就是一帧硬切)
     expect(h.visible.has('float')).toBe(true)
@@ -194,12 +227,13 @@ describe('native form coordinator', () => {
     h.controller.report({ type: 'covered', id: h.commands.at(-1)!.command.id }, 'whale')
     expect([...h.visible]).toEqual(['whale'])
   })
-  it('reversing mid-collapse keeps the panel visible and lands back on float', () => {
+  it('reversing mid-collapse keeps the panel visible and lands back on float', async () => {
     const h = setup(), token = start(h)
     h.controller.report({ type: 'complete', ...token, form: 'float' }, 'whale')
     h.controller.report({ type: 'presented', ...token }, 'float')
     vi.advanceTimersByTime(FORM_CONFIG.retireDelayMs)
     h.controller.request('whale')
+    await vi.advanceTimersByTimeAsync(0)
     h.controller.report({ type: 'prepared', id: h.commands.at(-1)!.command.id }, 'whale')
     h.controller.request('float')
     expect(h.commands.at(-1)!.command).toMatchObject({ type: 'play', target: 'float' })
@@ -210,5 +244,60 @@ describe('native form coordinator', () => {
     vi.advanceTimersByTime(FORM_CONFIG.retireDelayMs)
     expect([...h.visible]).toEqual(['float'])
     expect(h.controller.current).toBe('float')
+  })
+  it('snapshot collapse carries the shot, waits for covered, then settles and repaints', async () => {
+    const h = setup()
+    h.host.captureFloat = vi.fn(async () => ({ base: 'data:image/png;base64,QUFB', overlays: [] }))
+    const token = start(h)
+    h.controller.report({ type: 'complete', ...token, form: 'float' }, 'whale')
+    h.controller.report({ type: 'presented', ...token }, 'float')
+    vi.advanceTimersByTime(FORM_CONFIG.retireDelayMs)
+    h.controller.request('whale')
+    await vi.advanceTimersByTimeAsync(0)
+    const prepare = h.commands.filter(c => c.command.type === 'prepare').at(-1)!.command
+    expect(prepare).toMatchObject({ type: 'prepare', shot: { base: 'data:image/png;base64,QUFB', overlays: [] } })
+    h.controller.report({ type: 'prepared', id: (prepare as { id: number }).id }, 'whale')
+    // 鲸鱼窗口的 DWM 显示过渡(~200ms)内整窗半透明:即使外壳像素=真实 UI,
+    // 过早隐藏悬浮窗也会透出桌面,两条收起路径都等 covered
+    expect(h.visible.has('float')).toBe(true)
+    expect(h.controller.phase).toBe('animating')
+    h.controller.report({ type: 'covered', id: (prepare as { id: number }).id }, 'whale')
+    expect([...h.visible]).toEqual(['whale'])
+    const play = h.commands.at(-1)!.command as Extract<FormCommand, { type: 'play' }>
+    h.controller.report({ type: 'complete', id: play.id, revision: play.revision, form: 'whale' }, 'whale')
+    expect(h.controller.current).toBe('whale')
+    expect(h.host.repaint).toHaveBeenCalledWith('whale')
+  })
+  it('capture failure keeps the legacy cover flow (float stays visible until covered)', async () => {
+    const h = setup()
+    h.host.captureFloat = vi.fn(async () => null)
+    const token = start(h)
+    h.controller.report({ type: 'complete', ...token, form: 'float' }, 'whale')
+    h.controller.report({ type: 'presented', ...token }, 'float')
+    vi.advanceTimersByTime(FORM_CONFIG.retireDelayMs)
+    h.controller.request('whale')
+    await vi.advanceTimersByTimeAsync(0)
+    const prepare = h.commands.filter(c => c.command.type === 'prepare').at(-1)!.command
+    expect((prepare as { shot?: unknown }).shot).toBeUndefined()
+    h.controller.report({ type: 'prepared', id: (prepare as { id: number }).id }, 'whale')
+    expect(h.visible.has('float')).toBe(true)
+    h.controller.report({ type: 'covered', id: (prepare as { id: number }).id }, 'whale')
+    expect([...h.visible]).toEqual(['whale'])
+  })
+  it('a capture resolving after a cancelled transition never sends prepare', async () => {
+    const h = setup()
+    let resolveCapture: (value: null) => void = () => {}
+    h.host.captureFloat = vi.fn(() => new Promise<null>(resolve => { resolveCapture = resolve }))
+    const token = start(h)
+    h.controller.report({ type: 'complete', ...token, form: 'float' }, 'whale')
+    h.controller.report({ type: 'presented', ...token }, 'float')
+    vi.advanceTimersByTime(FORM_CONFIG.retireDelayMs)
+    h.controller.request('whale')
+    const countAtCancel = h.commands.length
+    h.controller.request('float') // 准备期取消,回到 float
+    expect(h.controller.phase).toBe('stable')
+    resolveCapture(null)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.commands.slice(countAtCancel).filter(c => c.command.type === 'prepare')).toHaveLength(0)
   })
 })

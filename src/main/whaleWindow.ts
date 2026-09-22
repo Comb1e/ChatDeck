@@ -126,6 +126,16 @@ export class WhaleWindowController {
     win.webContents.invalidate()
   }
 
+  /**
+   * 强制整窗重绘(窗口已稳定可见时安全):透明窗口上抗锯齿边缘列可能残留在
+   * DWM 合成面(收起落定后桌宠旁出现 1px 蓝线);重绘只替换合成面内容。
+   * 与 heal() 的 hide→show 不同,这里不重建表面,不会闪透明空帧。
+   */
+  repaint(): void {
+    const win = this.getWindow()
+    if (win && win.isVisible() && !win.webContents.isCrashed()) win.webContents.invalidate()
+  }
+
   destroy(): void {
     if (this.cursorTimer) {
       clearInterval(this.cursorTimer)

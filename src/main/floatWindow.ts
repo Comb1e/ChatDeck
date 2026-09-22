@@ -115,6 +115,26 @@ export class FloatWindowController {
     return panelFromWindow((this.getWindow() ?? this.create()).getBounds())
   }
 
+  /**
+   * 捕获悬浮窗整窗快照(收起换形的截图外壳用)。
+   * 只含主页自身渲染(玻璃壳/头部/提示词条);站点 WebContentsView 是独立合成面,
+   * 不在其中,由 ViewManager.captureViews 按布局矩形另外捕获后叠加。
+   */
+  async captureWindow(timeoutMs: number): Promise<string | null> {
+    const win = this.getWindow()
+    if (!win || !win.isVisible() || win.webContents.isCrashed()) return null
+    try {
+      const image = await Promise.race([
+        win.webContents.capturePage(),
+        new Promise<null>(resolve => setTimeout(() => resolve(null), timeoutMs))
+      ])
+      if (!image || image.isEmpty()) return null
+      return image.toDataURL()
+    } catch {
+      return null
+    }
+  }
+
   /** Coordinates and persisted positions always describe the 360×620 panel. */
   prepareAt(point: { x: number; y: number }): Rect {
     const win = this.getWindow() ?? this.create()

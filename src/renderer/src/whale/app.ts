@@ -54,10 +54,14 @@ function updateEffectsViewport(): void {
   FX.setOrigin(EffectsViewport.x, EffectsViewport.y)
 }
 
+/* debug 钉住模式(whale.html?pinned=1):鲸鱼停在原地只保留呼吸/视线等环境动画,
+   不自主游动/跳跃——形态切换与截图测试需要可复现的鲸鱼位置时使用 */
+const PINNED = new URLSearchParams(location.search).has('pinned')
+
 /* ---------- 行为大脑:状态结束后按权重随机挑下一个 ---------- */
 function scheduleNext(extraDelay = 0): void {
   if (brainTimer) clearTimeout(brainTimer)
-  if (!App.ready) return
+  if (!App.ready || PINNED) return
   brainTimer = setTimeout(pickAndRun, rand(WHALE_CONFIG.behavior.minDelay, WHALE_CONFIG.behavior.maxDelay) + extraDelay)
 }
 

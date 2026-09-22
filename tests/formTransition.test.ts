@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { FormTimeline, type FormCommand, type FormScene, type PetVisual } from '../src/shared/formTransition'
+import { FORM_CONFIG, FormTimeline, type FormCommand, type FormScene, type PetVisual } from '../src/shared/formTransition'
 import { FormController, type FormHost } from '../src/main/formController'
 import { contourBounds, createMorph, contains, panelSkin, petPoint, petSkin, relocateScene } from '../src/shared/whaleSkin'
 
@@ -119,6 +119,9 @@ describe('native form coordinator', () => {
     h.controller.report({ type: 'complete', ...token, form: 'float' }, 'whale')
     expect(h.visible.has('whale') && h.visible.has('float')).toBe(true)
     h.controller.report({ type: 'presented', ...token }, 'float')
+    // 悬浮窗的 DWM 显示过渡(~retireDelayMs)走完前,鲸鱼窗口保持可见,避免露出半透明中间态
+    expect(h.visible.has('whale') && h.visible.has('float')).toBe(true)
+    vi.advanceTimersByTime(FORM_CONFIG.retireDelayMs)
     expect([...h.visible]).toEqual(['float'])
     expect(h.controller.current).toBe('float')
   })
@@ -158,6 +161,8 @@ describe('native form coordinator', () => {
     expect(h.controller.phase).toBe('animating')
     vi.advanceTimersByTime(2000)
     expect(h.controller.phase).toBe('stable')
+    // 恢复路径同样延迟退役鲸鱼窗口(等悬浮窗显示过渡走完)
+    vi.advanceTimersByTime(FORM_CONFIG.retireDelayMs)
     expect([...h.visible]).toEqual(['float'])
     h.controller.report({ type: 'complete', ...token, form: 'whale' }, 'whale')
     expect(h.controller.current).toBe('float')

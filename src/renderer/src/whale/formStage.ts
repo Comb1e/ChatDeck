@@ -1,4 +1,4 @@
-import { FormTimeline, type FormCommand, type FormScene, type PetVisual } from '@shared/formTransition'
+import { FORM_CONFIG, FormTimeline, type FormCommand, type FormScene, type PetVisual } from '@shared/formTransition'
 import { createMorph } from '@shared/whaleSkin'
 import { SkinRenderer } from './skinRenderer'
 
@@ -21,6 +21,8 @@ export class FormStage {
   private playing = false
   private interactive = false
   private captured?: PetVisual
+  private crossfade = false
+  private fadeTimer?: ReturnType<typeof setTimeout>
   constructor(stage: SVGElement, private hooks: StageHooks) {
     this.skin = new SkinRenderer(stage)
     this.skin.show(false)
@@ -39,6 +41,7 @@ export class FormStage {
       window.api.form.report({ type: 'captured', id: command.id, pet: this.captured })
     } else if (command.type === 'prepare') {
       this.stop()
+      this.clearFade()
       this.id = command.id
       this.hooks.freeze()
       this.scene = command.scene
@@ -48,6 +51,13 @@ export class FormStage {
       this.skin.draw(this.sample(this.clock.progress))
       this.skin.root.dataset.progress = String(this.clock.progress)
       this.skin.show(true)
+      // 收起方向(from=float):鲸鱼窗口将显示在真实悬浮窗正上方,外壳先以透明待命,
+      // play 时淡入盖住 UI,构成 crossfade;展开方向外壳直接顶替已隐藏的宠物本体。
+      this.crossfade = command.from === 'float'
+      if (this.crossfade) {
+        this.skin.root.style.transition = 'none'
+        this.skin.root.style.opacity = '0'
+      }
       this.hooks.cover()
       const id = this.id
       // A painted shell exists before native visibility changes.
@@ -59,9 +69,26 @@ export class FormStage {
       this.clock.reverseTo(command.target, performance.now())
       this.playing = true
       cancelAnimationFrame(this.frame)
+      if (this.crossfade && command.target === 'whale') {
+        // 收起:先淡入盖满真实悬浮窗(FormController 收到 covered 才隐藏它),再开始融化
+        this.clearFade()
+        this.skin.root.style.transition = `opacity ${FORM_CONFIG.coverMs}ms ease`
+        this.skin.root.style.opacity = '1'
+        const id = this.id
+        this.fadeTimer = setTimeout(() => {
+          this.fadeTimer = undefined
+          if (id !== this.id || !this.playing) return
+          this.skin.root.style.transition = ''
+          window.api.form.report({ type: 'covered', id })
+          this.tick(performance.now())
+        }, FORM_CONFIG.coverMs)
+        return
+      }
+      this.clearFade()
       this.tick(performance.now())
     } else if (command.type === 'settle') {
       this.stop()
+      this.clearFade()
       this.id = command.id
       this.skin.show(false)
       this.scene = command.scene
@@ -77,6 +104,12 @@ export class FormStage {
     this.hover()
     if (this.clock.done) {
       this.playing = false
+      // 融化结束到鲸鱼窗口真正隐藏之间有一段过渡期,此窗口内外壳不得截获鼠标
+      // (点击会落到下层真实悬浮窗上),统一恢复鼠标穿透。
+      if (this.interactive) {
+        this.interactive = false
+        window.api.whale.setInteractive(false)
+      }
       window.api.form.report({ type: 'complete', id: this.id, revision: this.revision, form: this.clock.target })
     } else this.frame = requestAnimationFrame(this.tick)
   }
@@ -95,5 +128,14 @@ export class FormStage {
     this.clock = undefined
     this.interactive = false
     window.api.whale.setInteractive(false)
+  }
+  /** 取消未完成的淡入定时并复位外壳透明度(瞬时回到不透明) */
+  private clearFade(): void {
+    if (this.fadeTimer) {
+      clearTimeout(this.fadeTimer)
+      this.fadeTimer = undefined
+    }
+    this.skin.root.style.transition = ''
+    this.skin.root.style.opacity = ''
   }
 }

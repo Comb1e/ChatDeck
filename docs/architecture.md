@@ -18,7 +18,7 @@ Electron（主进程 + WebContentsView）+ Vue 3 + TypeScript + Pinia + electron
 │ + transparent + alwaysOnTop │  │ 默认鼠标穿透(forward)         │  │ 无边框透明胶囊/卡片      │
 │ ┌────────────────────────┐ │  │ ┌──────────────────────────┐ │  │ ┌────────────────────┐ │
 │ │ FloatHeader (HTML)      │ │  │ │ SVG 鲸鱼 + Canvas 特效    │ │  │ │ 胶囊:各站点余额      │ │
-│ ├────────────────────────┤ │  │ │ (水花/气泡/涟漪/Zzz/爱心) │ │  │ ├────────────────────┤ │
+│ ├────────────────────────┤ │  │ │ (水花/气泡/涟漪/尾迹/Zzz/爱心) │ │  │ ├────────────────────┤ │
 │ │ WebContentsView (站点)  │ │  │ ├──────────────────────────┤ │  │ │ 卡片:列表/编辑站点   │ │
 │ │ 或 FloatPrompts (HTML)  │ │  │ │ 未读气泡(HTML,头顶跟随)  │ │  │ │ (展开态,含刷新)     │ │
 │ ├────────────────────────┤ │  │ └──────────────────────────┘ │  │ └────────────────────┘ │
@@ -89,7 +89,8 @@ whale/app.ts（编排:主循环/行为大脑/输入/接线）
   ├─ whale/states.ts   11 个行为状态（idle/swim/jumpDive/spin/sleep/happy/surface
   │                    + held/dragged/falling/bouncing/landing）
   ├─ whale/whale.ts    SVG 构成/姿态合成/命中测试/水线裁剪/表情/眨眼/视线
-  ├─ whale/particles.ts Canvas 粒子（水花/涟漪/气泡/Zzz/爱心,对象池化）
+  ├─ whale/particles.ts Canvas 粒子（水花/涟漪/气泡/Zzz/爱心/尾迹水流,对象池化）
+  ├─ whale/trail.ts    游动尾迹发射器（纯逻辑:等弧长布点,水流漂移运动学）
   ├─ whale/runtime.ts  计时/输入/运动原语（弹簧精确解/曲线路径/帧调度器）
   ├─ whale/tween.ts    补间与可取消等待    whale/fsm.ts  有限状态机 + 逐帧循环表
   └─ whale/badge.ts    未读气泡（头顶跟随,点击展开）  whale/context.ts  App 数据单例
@@ -145,6 +146,11 @@ stateDiagram-v2
   landing ──弹跳阈值──▶ bouncing ──▶ falling        landing ──▶ idle
   happy（悬浮触发,可被按压打断）    surface（定点浮出行为原语）
   任意状态 ──按压──▶ held（立即冻结姿态,取消上一个运动写者）
+
+游动尾迹（水流特效）:swim 的 onUpdate 里,尾鳍锚点(trail.ts TRAIL_ANCHOR,艺术坐标)
+  每前进 trail.spacing 像素布一个点 → 冒一个"尾迹气泡"(被水流向后带+缓慢上浮,
+  指数拖阻 dragDisplacement 很快停住),每 trail.streakEvery 个点夹一条水流线;
+  单帧位移超过 trail.maxStep 视为传送直接重置。纯逻辑在 trail.ts(TrailEmitter),离线可测。
 ```
 
 ```
@@ -166,7 +172,7 @@ stateDiagram-v2
 
 ## 余额监控（移植自 token-balance）
 
-独立小窗：收起态是一行一个站点的余额胶囊（底部有按币种的"已用"汇总行），展开为站点卡片（列表 / 编辑 / 添加 / 删除 / 刷新全部 / 账单）。整条数据链路都在**主进程**（渲染层 CSP 不放行外网），与悬浮窗/鲸鱼的形态系统完全无关。
+独立小窗：收起态是一行一个站点的余额胶囊（底部有按币种的"已用"汇总行），展开为站点卡片（列表 / 编辑 / 添加 / 删除 / 调序 / 刷新全部 / 账单）。**站点顺序 = sites 数组序**：列表行 ▲▼ 按钮 → `balance:move-site` → `BalanceStore.moveSite`（相邻交换、越界不动）→ 立即持久化并重排快照，胶囊与列表顺序跟随。整条数据链路都在**主进程**（渲染层 CSP 不放行外网），与悬浮窗/鲸鱼的形态系统完全无关。
 
 ### 数据流
 
@@ -187,6 +193,7 @@ stateDiagram-v2
   ├─ 状态快照(含 used/usedSource) → ① pushState → 余额小窗渲染层（ev:balance-state）
   │             ② BalanceNotifier：仅状态切换沿发系统通知（Token 失效 / 余额恢复）
   └─ 保存站点：先落盘再立即实测验证（验证失败也保留配置，列表里显示错误态）
+  └─ 调序：moveSite(id, ±1) 只重排 sites 数组并 syncSiteList+publish，不触发轮询
 ```
 
 ### 账单（`balance/billing.ts` + `balance/billdb.ts` + `billing-window.ts` + billing.html 入口）

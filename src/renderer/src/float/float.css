@@ -3,6 +3,11 @@
 body {
   background: transparent;
   color: var(--glass-text);
+  --glass-text: #ffffff;
+  --glass-text-dim: #e5ebff;
+  --glass-text-faint: #c8d3ff;
+  --accent-bright: #ffffff;
+  --glass-bg: #131824;
 }
 
 ::-webkit-scrollbar-thumb {

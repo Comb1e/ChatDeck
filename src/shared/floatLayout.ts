@@ -1,9 +1,16 @@
 import type { Rect } from './types'
+import { FORM_CONFIG } from './formTransition'
 
-/** 悬浮窗展开态尺寸(DIP) */
+/** 悬浮窗展开态尺寸(DIP);折叠(压缩)形态为独立鲸鱼窗口,不再有药丸尺寸 */
 export const FLOAT_EXPANDED = { width: 360, height: 620 } as const
-/** 悬浮窗折叠态(药丸)尺寸(DIP);高度 64 为 Windows 非可调窗口的系统最小高度 */
-export const FLOAT_PILL = { width: 148, height: 64 } as const
+export const FLOAT_INSET = FORM_CONFIG.inset
+export const FLOAT_WINDOW = { width: 384, height: 644 } as const
+export function floatPanelRect(): Rect {
+  return { ...FLOAT_INSET, ...FLOAT_EXPANDED }
+}
+export function panelFromWindow(bounds: Rect): Rect {
+  return { x: bounds.x + FLOAT_INSET.x, y: bounds.y + FLOAT_INSET.y, ...FLOAT_EXPANDED }
+}
 /** 展开态头部高度:标题行 + 厂商切换条 */
 export const FLOAT_HEADER_H = 84
 /** 展开态底部提示词条高度 */
@@ -14,8 +21,8 @@ export const FLOAT_FRAME_PAD = 10
 /** 展开态聊天区矩形(相对窗口内容区,与 WebContentsView 子视图坐标一致) */
 export function floatChatRect(): Rect {
   return {
-    x: FLOAT_FRAME_PAD,
-    y: FLOAT_HEADER_H,
+    x: FLOAT_INSET.x + FLOAT_FRAME_PAD,
+    y: FLOAT_INSET.y + FLOAT_HEADER_H,
     width: FLOAT_EXPANDED.width - FLOAT_FRAME_PAD * 2,
     height: FLOAT_EXPANDED.height - FLOAT_HEADER_H - FLOAT_PROMPTBAR_H - FLOAT_FRAME_PAD
   }
@@ -24,8 +31,8 @@ export function floatChatRect(): Rect {
 /** 提示词模式内容区矩形(占据头部以下全部区域) */
 export function floatPromptsRect(): Rect {
   return {
-    x: FLOAT_FRAME_PAD,
-    y: FLOAT_HEADER_H,
+    x: FLOAT_INSET.x + FLOAT_FRAME_PAD,
+    y: FLOAT_INSET.y + FLOAT_HEADER_H,
     width: FLOAT_EXPANDED.width - FLOAT_FRAME_PAD * 2,
     height: FLOAT_EXPANDED.height - FLOAT_HEADER_H - FLOAT_FRAME_PAD
   }

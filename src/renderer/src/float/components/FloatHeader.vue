@@ -13,12 +13,16 @@ function initial(name: string): string {
   return name.trim().charAt(0).toUpperCase() || '?'
 }
 
-function hide(): void {
-  void window.api.float.hide()
+function collapse(): void {
+  float.collapse()
 }
 
 function openSettings(): void {
   void window.api.app.openSettings()
+}
+
+function toggleBalance(): void {
+  window.api.balance.toggle()
 }
 </script>
 
@@ -26,21 +30,28 @@ function openSettings(): void {
   <!-- 头部整块为拖拽区;按钮/厂商点各自 no-drag -->
   <header class="hd" :style="{ height: `${FLOAT_HEADER_H}px` }">
     <div class="row title-row">
-      <span class="logo-dot" />
+      <span class="whale-eye-space" aria-hidden="true" />
       <span class="wordmark">ChatDeck</span>
       <span class="mono-tag">FLOAT</span>
       <span class="flex" />
+      <button class="wbtn" title="余额监控" @click="toggleBalance()">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 7H5a2 2 0 0 1-2-2 2 2 0 0 1 2-2h13v4" />
+          <path d="M3 5v13a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1H5a2 2 0 0 1-2-2" />
+          <path d="M16.5 13.5h.01" />
+        </svg>
+      </button>
       <button class="wbtn" title="设置" @click="openSettings()">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
           <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" />
         </svg>
       </button>
-      <button class="wbtn" title="收起为悬浮药丸" @click="float.toggleExpanded()">
+      <button class="wbtn" title="收起为鲸鱼" @click="collapse()">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4">
           <path d="M9 3h4v4M7 13H3V9M13 3l-5 5M3 13l5-5" />
         </svg>
       </button>
-      <button class="wbtn" title="隐藏悬浮窗" @click="hide()">
+      <button class="wbtn" title="收起为鲸鱼" @click="collapse()">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4">
           <path d="M4 4l8 8M12 4l-8 8" />
         </svg>
@@ -74,7 +85,7 @@ function openSettings(): void {
   justify-content: space-between;
   padding: 0 8px;
   border-bottom: 1px solid var(--glass-border);
-  background: var(--glass-bg-soft);
+  background: transparent;
   -webkit-app-region: drag;
 }
 
@@ -97,12 +108,10 @@ function openSettings(): void {
   display: none;
 }
 
-.logo-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--glow);
+.whale-eye-space {
+  width: 24px;
+  height: 26px;
+  flex-shrink: 0;
 }
 
 .wordmark {

@@ -12,7 +12,6 @@ export const HIDDEN_RECT = { x: 0, y: 0, width: 0, height: 0 }
 
 interface FloatState {
   ready: boolean
-  expanded: boolean
   mode: FloatMode
   activeId: string | null
   loadStates: Record<string, ViewLoadState>
@@ -21,13 +20,13 @@ interface FloatState {
 }
 
 /**
- * 悬浮窗状态机:展开 ⇄ 折叠、对话 ⇄ 提示词、活动站点切换。
+ * 悬浮窗状态机:对话 ⇄ 提示词、活动站点切换。
+ * 收起(压缩)形态是独立的鲸鱼窗口,由主进程编排切换;本窗口只以展开形态出现。
  * 站点视图矩形经 fview:set-layout 交主进程定位(WebContentsView 覆盖在 HTML 之上)。
  */
 export const useFloatStore = defineStore('float', {
   state: (): FloatState => ({
     ready: false,
-    expanded: true,
     mode: 'chat',
     activeId: null,
     loadStates: {},
@@ -40,7 +39,6 @@ export const useFloatStore = defineStore('float', {
       const providersStore = useProvidersStore()
       await Promise.all([providersStore.load(), usePromptsStore().load()])
       const saved = await window.api.float.getState()
-      this.expanded = saved.expanded
       const enabled = providersStore.enabled
       this.activeId =
         saved.activeProviderId && enabled.some((p) => p.id === saved.activeProviderId)
@@ -62,9 +60,22 @@ export const useFloatStore = defineStore('float', {
       window.api.onF.loadStateChanged((e) => {
         this.loadStates[e.id] = e.state as ViewLoadState
       })
+      // 余额站点的 Usage 页在悬浮窗内打开:Usage 厂商可能是刚落的,先补拉列表
+      // 再导航视图(加载 Usage 地址),最后激活对应窗格
+      window.api.onF.usageOpen((e) => {
+        void (async () => {
+          await providersStore.load()
+          await window.api.fview.navigate(e.id, e.url)
+          this.activate(e.id)
+        })()
+      })
+      // 未读站点数推送:鲸鱼形态下头顶气泡由此驱动(渲染层隐藏时仍照常计数)
+      providersStore.$subscribe(() => {
+        window.api.float.pushUnread(providersStore.unread.length)
+      })
 
       this.ready = true
-      this.sync()
+      await this.sync()
     },
 
     activate(id: string): void {
@@ -78,10 +89,9 @@ export const useFloatStore = defineStore('float', {
       this.sync()
     },
 
-    async toggleExpanded(): Promise<void> {
-      this.expanded = !this.expanded
-      await window.api.float.resize(this.expanded)
-      this.sync()
+    /** 收起为鲸鱼形态(压缩形态),由主进程编排窗口切换 */
+    collapse(): void {
+      void window.api.float.collapse()
     },
 
     setMode(mode: FloatMode): void {
@@ -93,16 +103,16 @@ export const useFloatStore = defineStore('float', {
       if (this.activeId) window.api.fview.reload(this.activeId)
     },
 
-    /** 把视图矩形同步给主进程;隐藏(折叠/提示词模式)时用零矩形保持挂载不刷新 */
-    sync(): void {
+    /** 把视图矩形同步给主进程;提示词模式下用零矩形保持挂载不刷新 */
+    async sync(): Promise<void> {
       if (!this.ready) return
       const entries =
-        this.expanded && this.mode === 'chat' && this.activeId
+        this.mode === 'chat' && this.activeId
           ? [{ id: this.activeId, rect: floatChatRect() }]
           : this.activeId
             ? [{ id: this.activeId, rect: HIDDEN_RECT }]
             : []
-      void window.api.fview.setLayout(entries)
+      await window.api.fview.setLayout(entries)
     },
 
     showToast(msg: string): void {

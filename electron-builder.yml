@@ -9,7 +9,9 @@ directories:
 
 # 应用本体:electron-vite 构建产物(main/preload/renderer)+ package.json(自动包含)
 files:
-  - out/**
+  - out/main/**
+  - out/preload/**
+  - out/renderer/**
 
 # 最高 LZMA 压缩(portable 7z 与 NSIS 共用),构建稍慢但产物更小
 compression: maximum

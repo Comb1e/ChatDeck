@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ChatDeck 账单</title>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    />
+  </head>
+  <body>
+    <div id="app">
+      <div class="card surface">
+        <header id="hdr" class="draggable">
+          <span class="title">账单明细</span>
+          <span id="genAt" class="gen-at"></span>
+          <div class="hdr-actions">
+            <button id="btnRefresh" class="icon-btn" title="刷新" aria-label="刷新">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 4a8 8 0 0 1 7.7 5.9l2-4-1.8-.9-1 2A10 10 0 0 0 2.2 10l2 .4A8 8 0 0 1 12 4Zm0 16a8 8 0 0 1-7.7-5.9l-2 4 1.8.9 1-2A10 10 0 0 0 21.8 14l-2-.4A8 8 0 0 1 12 20Z"/></svg>
+            </button>
+            <button id="btnClose" class="icon-btn" title="关闭" aria-label="关闭">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7 4.3 4.3l6.3 6.3 6.3-6.3z"/></svg>
+            </button>
+          </div>
+        </header>
+        <main id="content">
+          <div id="loading" class="empty">正在统计用量…(站点接口可能需要几秒)</div>
+          <div id="body" hidden>
+            <div id="summary"></div>
+            <div id="sites"></div>
+            <div id="excluded" class="excluded" hidden></div>
+            <div id="empty" class="empty" hidden>暂无用量数据;站点成功计费后这里会出现明细。</div>
+          </div>
+        </main>
+      </div>
+    </div>
+    <script type="module" src="/src/billing/main.ts"></script>
+  </body>
+</html>

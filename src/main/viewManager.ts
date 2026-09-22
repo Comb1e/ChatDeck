@@ -22,7 +22,8 @@ export interface ViewManagerHooks {
   onLoadStateChanged(id: string, state: ViewLoadState): void
 }
 
-const DEFAULT_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`
+/** 桌面 UA(主进程为新建厂商选 UA 时用,如余额站点的 Usage 页) */
+export const DEFAULT_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`
 /** 窄窗口场景(悬浮窗)的移动端 UA:站点给出适配小屏的布局 */
 export const MOBILE_UA = `Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Mobile Safari/537.36`
 
@@ -106,7 +107,9 @@ export class ViewManager {
     const mv = this.views.get(id)
     if (!mv) {
       // 不在缓存（从未打开或已清数据）：重新创建并直接加载站点
-      this.ensureView(id, true)
+      const provider = this.providerOf(id)
+      if (!provider) return
+      this.loadNow(this.createView(provider), provider.url)
       return
     }
     if (!canReload(mv.state)) return
@@ -118,6 +121,54 @@ export class ViewManager {
         /* 失败由 did-fail-load 统一处理 */
       })
     }
+  }
+
+  /**
+   * 把已注册站点的视图导航到指定地址（余额站点的 Usage 页等）。
+   * 无视图则按 provider 创建并直载目标地址；有视图按状态机走合法转移后换页。
+   */
+  navigate(id: string, url: string): void {
+    let mv = this.views.get(id)
+    if (!mv) {
+      const provider = this.providerOf(id)
+      if (!provider) return
+      mv = this.createView(provider) // about:blank 占位，真实目标地址由 loadNow 加载
+    } else if (mv.state === 'failed' || mv.state === 'crashed') {
+      this.dispatch(mv, { type: 'reload' })
+    }
+    this.loadNow(mv, url)
+  }
+
+  /**
+   * 挂载（如尚未挂载）并加载目标地址。共用尾段保证一个不变量：
+   * WebContentsView 必须在“已挂载且有尺寸”的状态下加载内容——未挂载（零尺寸）
+   * 状态加载的页面，挂上窗口后视觉正常但收不到鼠标输入（Usage 页错位的根因）。
+   * 布局矩形要等渲染层 activate → sync 才会到达，这里先用最近一次布局的窗格
+   * 矩形挂载；渲染层随后的 setLayout 以同矩形幂等覆盖。
+   */
+  private loadNow(mv: ManagedView, url: string): void {
+    this.mountWithLastLayout(mv)
+    if (mv.state === 'idle') mv.state = viewTransition(mv.state, { type: 'attach' })
+    mv.reported = 'loading'
+    this.hooks.onLoadStateChanged(mv.provider.id, mv.reported)
+    void mv.view.webContents.loadURL(url).catch(() => {
+      /* 失败由 did-fail-load 统一处理 */
+    })
+  }
+
+  /**
+   * 立即按最近一次布局的窗格矩形把视图挂到窗口上。
+   * 悬浮窗布局是单活动窗格，lastLayout[0] 即当前可见窗格；无布局时跳过
+   * （由渲染层随后的 setLayout 挂载）。
+   */
+  private mountWithLastLayout(mv: ManagedView): void {
+    if (!this.win || this.views.get(mv.provider.id) !== mv || mv.mountedNonzero) return
+    const rect = this.lastLayout?.[0]?.rect
+    if (!rect) return
+    this.win.contentView.addChildView(mv.view)
+    mv.view.setBounds(rect)
+    mv.mountedNonzero = rect.width > 0 && rect.height > 0
+    if (mv.mountedNonzero) mv.lastVisibleAt = Date.now()
   }
 
   back(id: string): void {
@@ -222,12 +273,12 @@ export class ViewManager {
 
   // ------------------------------------------------------------------
 
-  private ensureView(providerId: string, loadSite = false): ManagedView | null {
+  private ensureView(providerId: string): ManagedView | null {
     const existing = this.views.get(providerId)
     if (existing) return existing
     const provider = this.providerOf(providerId)
     if (!provider) return null
-    return this.createView(provider, loadSite ? provider.url : undefined)
+    return this.createView(provider)
   }
 
   private providerOf(id: string): Provider | null {

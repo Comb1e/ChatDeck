@@ -92,6 +92,15 @@ async function toggleAutostart(): Promise<void> {
   ui.showToast(real ? '已开启开机自启' : '已关闭开机自启')
 }
 
+// ---------- 余额监控 ----------
+function openBalance(): void {
+  window.api.balance.toggle('show')
+}
+
+function openBilling(): void {
+  window.api.balance.openBilling()
+}
+
 // ---------- 新增自定义厂商 ----------
 const showAdd = ref(false)
 const addForm = reactive({ name: '', url: '', color: '#d97757' })
@@ -190,6 +199,26 @@ async function addProvider(): Promise<void> {
     </section>
 
     <section>
+      <h3 class="sec-title">余额监控</h3>
+      <div class="row general-row">
+        <div class="general-info">
+          <div class="general-name">余额 / 额度监控窗口</div>
+          <div class="general-desc">独立小窗轮询各站点余额与火山方舟编码计划五小时额度;托盘右键菜单同样可开关</div>
+        </div>
+        <span class="grow" />
+        <button class="ghost" @click="openBalance()">打开窗口</button>
+      </div>
+      <div class="row general-row">
+        <div class="general-info">
+          <div class="general-name">账单明细</div>
+          <div class="general-desc">每月使用量等明细;按币种分开统计,sub2api 为站点记账,DeepSeek 为本机计量,百分比额度站点不参与</div>
+        </div>
+        <span class="grow" />
+        <button class="ghost" @click="openBilling()">打开账单</button>
+      </div>
+    </section>
+
+    <section>
       <h3 class="sec-title">提示词库</h3>
       <div class="row">
         <button class="ghost" @click="resetPrompts()">恢复默认提示词</button>
@@ -222,7 +251,9 @@ async function addProvider(): Promise<void> {
     <section>
       <h3 class="sec-title">关于</h3>
       <p class="about">
-        ChatDeck v0.3.7 · 国内大模型聚合工作台<br />
+        ChatDeck v0.7.1 · 国内大模型聚合工作台<br />
+        桌面常驻小鲸鱼（悬浮窗压缩形态）：单击鲸鱼展开面板，鼠标悬浮它会开心跳。<br />
+        余额监控小窗：托盘右键「余额监控」开关（站点与 Token 在窗口内管理）。<br />
         每个站点使用独立存储，登录数据仅保存在本机。<br />
         快捷键：Ctrl + 1~9 切换站点（悬浮窗），Ctrl + Q 划词翻译。
       </p>

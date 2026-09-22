@@ -188,6 +188,22 @@ export class BalanceStore {
     return this.save({ sites: cfg.sites.filter((s) => s.id !== id) }).sites
   }
 
+  /**
+   * 调整站点顺序(delta=-1 上移 / +1 下移)。
+   * 越界(已在边界继续同向移动)或未知 id 时原样返回,不写盘;
+   * 成功即持久化——sites 数组序就是胶囊与列表的展示序。
+   */
+  moveSite(id: string, delta: -1 | 1): BalanceSite[] {
+    const cfg = this.load()
+    const from = cfg.sites.findIndex((s) => s.id === id)
+    const to = from + delta
+    if (from < 0 || to < 0 || to >= cfg.sites.length) return cfg.sites
+    const sites = [...cfg.sites]
+    const [moved] = sites.splice(from, 1)
+    sites.splice(to, 0, moved as BalanceSite)
+    return this.save({ sites }).sites
+  }
+
   updateSiteFields(id: string, patch: Partial<BalanceSite>): BalanceSite[] {
     const site = this.getSite(id)
     if (!site) return this.getSites()

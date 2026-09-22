@@ -109,6 +109,8 @@ export interface DeckApi {
     /** 保存并立即验证(凭据留空表示保持不变) */
     saveSite(input: BalanceSiteInput): Promise<BalanceSaveResult>
     removeSite(id: string): Promise<{ ok: boolean }>
+    /** 调整站点顺序(delta=-1 上移/+1 下移);胶囊与列表顺序立即跟随 */
+    moveSite(id: string, delta: -1 | 1): Promise<{ ok: boolean }>
     refreshNow(): Promise<BalanceRefreshResult>
     /** 打开/关闭余额小窗;传 'show' 则只打开(幂等,设置窗口入口用) */
     toggle(mode?: 'show'): void

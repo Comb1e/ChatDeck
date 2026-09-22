@@ -19,6 +19,7 @@ import { captureSelectedText } from './textCapture'
 import { BalanceStore } from './balance/store'
 import { BalanceScheduler } from './balance/scheduler'
 import { UsageStore } from './balance/usage'
+import { BillDb } from './balance/billdb'
 import { BalanceNotifier } from './balance/notify'
 import { BalanceWindowController } from './balance/window'
 import { BillingWindowController } from './balance/billing-window'
@@ -48,6 +49,8 @@ const whaleWin = new WhaleWindowController(() => forms.recover('whale'))
 // 用量台账独立成文件（派生数据,清掉即重新计量,不污染用户手编的配置）
 const balanceStore = new BalanceStore(join(app.getPath('userData'), 'balance.user.json'))
 const balanceUsage = new UsageStore(join(app.getPath('userData'), 'balance.usage.json'))
+// 本地账单库(sqlite):账单明细窗口的统一数据面(站点记账/本机计量/计费中心真实账单)
+const balanceBills = new BillDb(join(app.getPath('userData'), 'balance.sqlite'))
 const balanceScheduler = new BalanceScheduler(balanceStore, balanceUsage)
 const balanceNotifier = new BalanceNotifier(resourceFile('balance-icon.png'))
 const balanceWin = new BalanceWindowController({
@@ -127,6 +130,7 @@ async function bootstrap(): Promise<void> {
     balanceWin,
     billingWin,
     balanceUsage,
+    balanceBills,
     settingsWin,
     translate,
     translateWin,
@@ -234,6 +238,7 @@ app.on('before-quit', () => {
   floatViews.destroyAll()
   whaleWin.destroy()
   balanceScheduler.stop()
+  balanceBills.flushSync()
   balanceWin.destroy()
   billingWin.destroy()
   tray?.destroy()

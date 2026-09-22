@@ -13,11 +13,16 @@
  * 用户只关心五小时窗口,故取 Level==='session'(缺失时退回第一个条目)。
  * 额度显示用 currency='PCT'(百分比),与货币站点天然互斥,不参与合计。
  */
-import { createHash, createHmac } from 'node:crypto'
 import { ApiError, AuthError, SetupError, parseBalance, requestJson, shapeOf } from './base'
 import type { BalanceProvider, BalanceQueryContext, BalanceResult } from './base'
+import {
+  EMPTY_SHA256,
+  classifyError,
+  deriveSigningKey,
+  signStringToSign,
+  utcStamp
+} from './volcsig'
 
-const EMPTY_SHA256 = createHash('sha256').update('').digest('hex')
 const ACTION = 'GetCodingPlanUsage'
 const API_VERSION = '2024-01-01'
 const REGION = 'cn-beijing' // 方舟 OpenAPI 所在区域,与控制台 region:cn-beijing 一致
@@ -28,18 +33,10 @@ function trim(v: unknown): string {
   return typeof v === 'string' ? v.trim() : ''
 }
 
-function utcStamp(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, '0')
-  return (
-    `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}` +
-    `T${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`
-  )
-}
-
 /**
- * 火山引擎 SigV4 签名,独立纯函数便于对照测试。
- * 派生链 HMAC(SK, 日期) → region → service → "request",最后对
- * stringToSign 再取一次 HMAC 的 hex 作为 Signature。
+ * 火山引擎 SigV4 签名(POST 表单版),独立纯函数便于对照测试。
+ * canonicalRequest 自行构造(签名头含 content-type/x-content-sha256),
+ * 派生链与信封在 volcsig.ts 与 volcbill(GET 版)共用。
  */
 export function signVolcRequest(cfg: {
   action: string
@@ -69,17 +66,8 @@ export function signVolcRequest(cfg: {
     EMPTY_SHA256
   ].join('\n')
   const scope = `${dateStamp}/${cfg.region}/${cfg.service}/request`
-  const stringToSign = [
-    'HMAC-SHA256',
-    xDate,
-    scope,
-    createHash('sha256').update(canonicalRequest).digest('hex')
-  ].join('\n')
-  let key = createHmac('sha256', cfg.sk).update(dateStamp).digest()
-  for (const part of [cfg.region, cfg.service, 'request']) {
-    key = createHmac('sha256', key).update(part).digest()
-  }
-  const signature = createHmac('sha256', key).update(stringToSign).digest('hex')
+  const key = deriveSigningKey(cfg.sk, dateStamp, cfg.region, cfg.service)
+  const signature = signStringToSign(key, xDate, scope, canonicalRequest)
   const authorization =
     `HMAC-SHA256 Credential=${cfg.ak}/${scope}, ` +
     `SignedHeaders=${signedHeaders}, Signature=${signature}`
@@ -104,13 +92,6 @@ interface QuotaEntry {
 interface VolcEnvelope {
   ResponseMetadata?: { Error?: { Code?: unknown; Message?: unknown } | null }
   Result?: { QuotaUsage?: unknown }
-}
-
-/** 火山错误码里属于"密钥问题"的(其余视为服务端/结构异常) */
-const AUTH_CODE_RE = /Signature|AccessKey|Auth|Denied|Forbidden|Credential|Invalid/i
-
-function classifyError(code: string): 'auth' | 'api' {
-  return AUTH_CODE_RE.test(code) ? 'auth' : 'api'
 }
 
 export function parseVolcUsage(json: unknown): { percent: number; resetIso: string | null } {

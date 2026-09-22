@@ -7,11 +7,14 @@ copyright: Copyright © 2026 CYK
 directories:
   output: dist
 
-# 应用本体:electron-vite 构建产物(main/preload/renderer)+ package.json(自动包含)
+# 应用本体:electron-vite 构建产物(main/preload/renderer)+ package.json(自动包含);
+# sql.js(本地账单库的 WASM sqlite)是唯一的运行时依赖,wasm 由主进程从其 dist 目录加载
 files:
   - out/main/**
   - out/preload/**
   - out/renderer/**
+  - node_modules/sql.js/package.json
+  - node_modules/sql.js/dist/**
 
 # 最高 LZMA 压缩(portable 7z 与 NSIS 共用),构建稍慢但产物更小
 compression: maximum

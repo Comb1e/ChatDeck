@@ -27,6 +27,12 @@
           <div id="loading" class="empty">正在统计用量…(站点接口可能需要几秒)</div>
           <div id="body" hidden>
             <div id="summary"></div>
+            <div id="granularity" class="granularity">
+              <button class="gbtn" data-g="day" type="button">按天</button>
+              <button class="gbtn active" data-g="month" type="button">按月</button>
+              <button class="gbtn" data-g="year" type="button">按年</button>
+            </div>
+            <div id="siteFilter" class="site-filter" hidden></div>
             <div id="sites"></div>
             <div id="excluded" class="excluded" hidden></div>
             <div id="empty" class="empty" hidden>暂无用量数据;站点成功计费后这里会出现明细。</div>

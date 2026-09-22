@@ -66,25 +66,40 @@ export class FormStage {
       }))
     } else if (command.type === 'play' && command.id === this.id && this.clock) {
       this.revision = command.revision
+      // crossfade 保持期不跑 tick,时钟会停滞;先重新锚定,避免 reverseTo 把停滞的 dt 一次性吃进进度
+      this.clock.resync(performance.now())
       this.clock.reverseTo(command.target, performance.now())
       this.playing = true
       cancelAnimationFrame(this.frame)
+      if (this.fadeTimer) {
+        clearTimeout(this.fadeTimer)
+        this.fadeTimer = undefined
+      }
       if (this.crossfade && command.target === 'whale') {
-        // 收起:先淡入盖满真实悬浮窗(FormController 收到 covered 才隐藏它),再开始融化
-        this.clearFade()
+        // 收起:外壳从 prepare 待命的 opacity:0 淡入盖住真实悬浮窗。此处不能 clearFade():
+        // 它会把 opacity 复位成 1,随后再设 1 值不变,淡入永远不触发,外壳一帧硬切盖掉 UI。
         this.skin.root.style.transition = `opacity ${FORM_CONFIG.coverMs}ms ease`
         this.skin.root.style.opacity = '1'
-        const id = this.id
+        const id = this.id, clock = this.clock
         this.fadeTimer = setTimeout(() => {
           this.fadeTimer = undefined
           if (id !== this.id || !this.playing) return
           this.skin.root.style.transition = ''
+          // 淡入期间时钟被刻意冻结在面板形态,先重新锚定再开始融化,
+          // 否则积攒的 dt 会让进度瞬间跳过前一半(外壳猛地一缩)。
+          clock!.resync(performance.now())
           window.api.form.report({ type: 'covered', id })
           this.tick(performance.now())
-        }, FORM_CONFIG.coverMs)
+        }, FORM_CONFIG.coveredDelayMs)
         return
       }
-      this.clearFade()
+      if (this.crossfade && command.target === 'float') {
+        // 收起中途反向回展开:外壳快速淡出让真实 UI 重新显露,与倒放并行
+        this.skin.root.style.transition = `opacity ${FORM_CONFIG.uncoverMs}ms ease`
+        this.skin.root.style.opacity = '0'
+      } else {
+        this.clearFade()
+      }
       this.tick(performance.now())
     } else if (command.type === 'settle') {
       this.stop()

@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted } from 'vue'
+import { FLOAT_EXPANDED, FLOAT_INSET, FLOAT_FRAME_PAD } from '@shared/floatLayout'
+import WhaleFrame from './components/WhaleFrame.vue'
 import { useFloatStore } from './floatStore'
 import { useProvidersStore } from '../stores/providers'
 import FloatHeader from './components/FloatHeader.vue'
@@ -18,9 +20,16 @@ function onKeydown(e: KeyboardEvent): void {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
-  void float.init()
+  window.api.form.onCommand(command => {
+    if (command.type === 'present') requestAnimationFrame(() => requestAnimationFrame(() => {
+      window.api.form.report({ type: 'presented', id: command.id, revision: command.revision })
+    }))
+  })
+  await float.init()
+  await nextTick()
+  requestAnimationFrame(() => requestAnimationFrame(() => window.api.form.ready()))
 })
 
 onBeforeUnmount(() => {
@@ -29,10 +38,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <!-- 展开态:暗色玻璃面板(压缩形态是独立鲸鱼窗口,由主进程切换) -->
-  <div v-if="float.ready" class="float">
+  <WhaleFrame />
+  <div v-if="float.ready" class="float" :style="{ left: `${FLOAT_INSET.x}px`, top: `${FLOAT_INSET.y}px`, width: `${FLOAT_EXPANDED.width}px`, height: `${FLOAT_EXPANDED.height}px` }">
     <FloatHeader />
-    <main class="content">
+    <main class="content" :style="{ padding: `0 ${FLOAT_FRAME_PAD}px ${FLOAT_FRAME_PAD}px` }">
       <!-- 对话模式:该区域被主进程 WebContentsView 覆盖,HTML 无需绘制 -->
       <FloatPrompts v-if="float.mode === 'prompts'" />
     </main>
@@ -57,15 +66,13 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .float {
-  position: relative;
+  position: absolute;
   display: flex;
   flex-direction: column;
   width: 100%;
   height: 100%;
   border-radius: var(--float-radius);
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  background: transparent;
   overflow: hidden;
   color: var(--glass-text);
 }
@@ -84,7 +91,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 0 10px;
   border-top: 1px solid var(--glass-border);
-  background: var(--glass-bg-soft);
+  background: transparent;
 }
 
 .stat {

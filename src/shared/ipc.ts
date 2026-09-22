@@ -1,5 +1,8 @@
 /** IPC channel 常量，主进程/preload/渲染层共用，避免魔法字符串 */
 export const IPC = {
+  FormCommand: 'ev:form-command',
+  FormReport: 'form:report',
+  FloatReady: 'float:ready',
   ProvidersList: 'providers:list',
   ProvidersSave: 'providers:save',
   ProvidersRemove: 'providers:remove',
@@ -37,7 +40,7 @@ export const IPC = {
   WhaleSetInteractive: 'whale:set-interactive',
   /** 鲸鱼渲染层初始化完成后再显示窗口(避免闪空) */
   WhaleReady: 'whale:ready',
-  /** 单击鲸鱼:携带世界姿态,主进程据此定位并展开悬浮窗 */
+  /** 单击鲸鱼:经形态协调器冻结并采集显示姿态,再展开 */
   WhaleExpand: 'whale:expand',
 
   // 设置窗口

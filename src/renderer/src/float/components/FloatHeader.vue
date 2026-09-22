@@ -30,7 +30,7 @@ function toggleBalance(): void {
   <!-- 头部整块为拖拽区;按钮/厂商点各自 no-drag -->
   <header class="hd" :style="{ height: `${FLOAT_HEADER_H}px` }">
     <div class="row title-row">
-      <span class="logo-dot" />
+      <span class="whale-eye-space" aria-hidden="true" />
       <span class="wordmark">ChatDeck</span>
       <span class="mono-tag">FLOAT</span>
       <span class="flex" />
@@ -85,7 +85,7 @@ function toggleBalance(): void {
   justify-content: space-between;
   padding: 0 8px;
   border-bottom: 1px solid var(--glass-border);
-  background: var(--glass-bg-soft);
+  background: transparent;
   -webkit-app-region: drag;
 }
 
@@ -108,12 +108,10 @@ function toggleBalance(): void {
   display: none;
 }
 
-.logo-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--glow);
+.whale-eye-space {
+  width: 24px;
+  height: 26px;
+  flex-shrink: 0;
 }
 
 .wordmark {

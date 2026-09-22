@@ -4,6 +4,9 @@ import {
   clampPoint,
   DRAG_KEEP_VISIBLE,
   FLOAT_EXPANDED,
+  FLOAT_INSET,
+  FLOAT_WINDOW,
+  panelFromWindow,
   FLOAT_FRAME_PAD,
   FLOAT_HEADER_H,
   FLOAT_PROMPTBAR_H,
@@ -25,13 +28,13 @@ describe('floatChatRect:聊天区矩形与窗口边界留白', () => {
   const rect = floatChatRect()
 
   it('位于头部之下、提示词条之上', () => {
-    expect(rect.y).toBe(FLOAT_HEADER_H)
-    expect(rect.y + rect.height).toBe(FLOAT_EXPANDED.height - FLOAT_PROMPTBAR_H - FLOAT_FRAME_PAD)
+    expect(rect.y - FLOAT_INSET.y).toBe(FLOAT_HEADER_H)
+    expect(rect.y - FLOAT_INSET.y + rect.height).toBe(FLOAT_EXPANDED.height - FLOAT_PROMPTBAR_H - FLOAT_FRAME_PAD)
   })
 
   it('左右各留玻璃边框留白(不贴窗口圆角)', () => {
-    expect(rect.x).toBe(FLOAT_FRAME_PAD)
-    expect(rect.x + rect.width).toBe(FLOAT_EXPANDED.width - FLOAT_FRAME_PAD)
+    expect(rect.x - FLOAT_INSET.x).toBe(FLOAT_FRAME_PAD)
+    expect(rect.x - FLOAT_INSET.x + rect.width).toBe(FLOAT_EXPANDED.width - FLOAT_FRAME_PAD)
   })
 
   it('宽高为正', () => {
@@ -44,8 +47,8 @@ describe('floatPromptsRect:提示词模式占满头部以下', () => {
   const rect = floatPromptsRect()
 
   it('底边贴到下边框留白', () => {
-    expect(rect.y).toBe(FLOAT_HEADER_H)
-    expect(rect.y + rect.height).toBe(FLOAT_EXPANDED.height - FLOAT_FRAME_PAD)
+    expect(rect.y - FLOAT_INSET.y).toBe(FLOAT_HEADER_H)
+    expect(rect.y - FLOAT_INSET.y + rect.height).toBe(FLOAT_EXPANDED.height - FLOAT_FRAME_PAD)
   })
 
   it('比聊天区更高', () => {
@@ -133,4 +136,12 @@ describe('clampDragBounds:拖动硬钳制(底边挡任务栏,其余保留可见�
     expect(p.x).toBeLessThanOrEqual(WORK.width - DRAG_KEEP_VISIBLE)
     expect(p.y).toBeLessThanOrEqual(WORK.height - H * 30)
   })
+})
+
+// Fixed independent expectations guard against changing both CSS and tests to the same wrong offset.
+it('keeps the original chat dimensions with a 24 DIP decoration gutter', () => {
+  expect(floatChatRect()).toEqual({ x: 34, y: 108, width: 340, height: 484 })
+  expect(FLOAT_WINDOW).toEqual({ width: 384, height: 644 })
+  expect(panelFromWindow({ x: -524, y: 76, width: 384, height: 644 }))
+    .toEqual({ x: -500, y: 100, width: 360, height: 620 })
 })

@@ -323,6 +323,12 @@ interface FxStats {
 }
 
 export const FX = {
+  clear: (): void => {
+    pool.push(...parts)
+    parts.length = 0
+    dirty = true
+    render()
+  },
   init,
   resize,
   setOrigin,

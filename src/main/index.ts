@@ -3,7 +3,7 @@ import { app, Menu, globalShortcut, powerMonitor, screen } from 'electron'
 import { IPC } from '@shared/ipc'
 import { formatDirection, resolveDirection } from '@shared/translate'
 import type { TranslatePopupState } from '@shared/translate'
-import { FLOAT_EXPANDED } from '@shared/floatLayout'
+import { FormController } from './formController'
 import { ProviderStore } from './store/providerStore'
 import { PromptStore } from './store/promptStore'
 import { resourceFile } from './store/jsonStore'
@@ -32,9 +32,10 @@ const floatViews = new ViewManager(MOBILE_UA)
 const translate = new TranslateService()
 // 译文弹窗依附悬浮窗(正上方),纯跟随不持久化位置
 const translateWin = new TranslatePopupController({
-  getFloatBounds: () => floatWin.getWindow()?.getBounds() ?? null
+  getFloatBounds: () => floatWin.isVisible() ? floatWin.getPanelBounds() : null
 })
 const floatWin = new FloatWindowController({
+  onRendererGone: () => forms.recover('float'),
   // 悬浮窗惰性创建,创建完成后把视图管理器绑定到该窗口
   onWindowCreated: (w) => floatViews.attachWindow(w),
   onMoved: () => translateWin.repositionIfVisible(),
@@ -42,7 +43,7 @@ const floatWin = new FloatWindowController({
   // 重建窗口前把站点视图从旧窗口摘下(留在缓存),随新窗口 boot 后的 setLayout 重新挂载
   onDetachViews: () => floatViews.setLayout([])
 })
-const whaleWin = new WhaleWindowController()
+const whaleWin = new WhaleWindowController(() => forms.recover('whale'))
 // 余额监控（移植自 token-balance）：配置存 userData，与站点配置同文件；
 // 用量台账独立成文件（派生数据,清掉即重新计量,不污染用户手编的配置）
 const balanceStore = new BalanceStore(join(app.getPath('userData'), 'balance.user.json'))
@@ -58,34 +59,19 @@ const billingWin = new BillingWindowController()
 const settingsWin = new SettingsWindowController()
 let tray: TrayController | null = null
 
-/** 展开悬浮窗(可带屏幕锚点);鲸鱼随之隐藏(压缩形态 ⇄ 展开形态互斥) */
-function expandFloat(at?: { x: number; y: number }): void {
-  if (at) {
-    floatWin.showAt({
-      x: at.x - FLOAT_EXPANDED.width / 2,
-      y: at.y - 120
-    })
-  } else {
-    floatWin.show()
-  }
-  whaleWin.hide()
-}
-
-/** 收起悬浮窗为鲸鱼形态;鲸鱼在悬浮窗原位置(中心点)破水浮出 */
-function collapseToWhale(): void {
-  const win = floatWin.getWindow()
-  const bounds = win && floatWin.isVisible() ? win.getBounds() : null
-  floatWin.hide()
-  whaleWin.show()
-  if (bounds) {
-    whaleWin.sendSurfaceAt({ x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 })
-  }
-}
-
-function toggleForm(): void {
-  if (floatWin.isVisible()) collapseToWhale()
-  else expandFloat()
-}
+const forms = new FormController({
+  ensure: form => form === 'float' ? floatWin.ensureCreated() : whaleWin.ensureCreated(),
+  send: (form, command) => {
+    const win = form === 'float' ? floatWin.getWindow() : whaleWin.getWindow()
+    if (win && !win.webContents.isCrashed()) win.webContents.send(IPC.FormCommand, command)
+  },
+  show: form => form === 'float' ? floatWin.show() : whaleWin.show(),
+  hide: form => form === 'float' ? floatWin.hide() : whaleWin.hide(),
+  panel: () => floatWin.getPanelBounds(),
+  placePanel: point => floatWin.prepareAt(point),
+  workarea: panel => screen.getDisplayMatching(panel).workArea,
+  stage: area => whaleWin.setWorkarea(area)
+})
 
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
@@ -93,7 +79,7 @@ if (!gotLock) {
 } else {
   // 二次启动:唤起压缩形态(鲸鱼)
   app.on('second-instance', () => {
-    whaleWin.show()
+    forms.request('whale')
   })
 
   void app.whenReady().then(bootstrap)
@@ -116,10 +102,10 @@ async function bootstrap(): Promise<void> {
 
   tray = new TrayController({
     openSettings: () => settingsWin.show(),
-    toggleForm: toggleForm,
+    toggleForm: () => forms.toggle(),
     jumpDive: () => {
       // 招牌动作只在鲸鱼可见时有意义(隐藏时动画无人看)
-      if (whaleWin.isVisible()) whaleWin.sendJumpDive()
+      if (forms.phase === 'stable' && forms.current === 'whale') whaleWin.sendJumpDive()
     },
     toggleBalance: () => {
       // 余额小窗显隐由托盘菜单控制;勾选态经 onVisibilityChanged 回写
@@ -144,7 +130,7 @@ async function bootstrap(): Promise<void> {
     settingsWin,
     translate,
     translateWin,
-    forms: { collapseToWhale, expandFloat, toggleForm }
+    forms
   })
   registerTranslateHotkey()
 
@@ -169,24 +155,29 @@ async function bootstrap(): Promise<void> {
   // isVisible 仍为 true 导致托盘第一击 toggle 反而执行隐藏),在这些事件后强制恢复;
   // 显示器拓扑变化(断开/分辨率变更)则把窗口夹回现存工作区。
   powerMonitor.on('resume', () => {
+    if (forms.phase !== 'stable') forms.recover()
     floatWin.heal()
     whaleWin.heal()
   })
   powerMonitor.on('unlock-screen', () => {
+    if (forms.phase !== 'stable') forms.recover()
     floatWin.heal()
     whaleWin.heal()
   })
   app.on('child-process-gone', (_e, details) => {
     if (details.type === 'GPU') {
+      forms.recover()
       floatWin.heal()
       whaleWin.heal()
     }
   })
   screen.on('display-removed', () => {
+    if (forms.phase !== 'stable') forms.recover()
     floatWin.reclamp()
     whaleWin.syncWorkarea()
   })
   screen.on('display-metrics-changed', () => {
+    if (forms.phase !== 'stable') forms.recover()
     floatWin.reclamp()
     whaleWin.syncWorkarea()
   })
@@ -238,6 +229,7 @@ async function handleTranslateHotkey(): Promise<void> {
 }
 
 app.on('before-quit', () => {
+  forms.destroy()
   globalShortcut.unregisterAll()
   floatViews.destroyAll()
   whaleWin.destroy()

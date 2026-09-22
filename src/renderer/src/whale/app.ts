@@ -17,6 +17,8 @@ import { States } from './states'
 import { Tween } from './tween'
 import { Whale } from './whale'
 import { badgeHit, initBadge, setUnread, syncBadge } from './badge'
+import { FormStage } from './formStage'
+import type { PetVisual } from '@shared/formTransition'
 import type { SchedulerMode } from './runtime'
 
 const rand = (a: number, b: number): number => a + Math.random() * (b - a)
@@ -25,6 +27,8 @@ const clamp = (v: number, a: number, b: number): number => Math.max(a, Math.min(
 const fsm = new FSM()
 let brainTimer: ReturnType<typeof setTimeout> | null = null
 let scheduler: FrameScheduler | null = null
+let suspended = false
+let formStage: FormStage | null = null
 function requestPetFrame(): void {
   if (scheduler) scheduler.request()
 }
@@ -81,6 +85,7 @@ function pickAndRun(): void {
 }
 
 function go(name: string, params?: Record<string, unknown>): void {
+  if (suspended) return
   document.body.classList.toggle('dragging', name === 'held' || name === 'dragged')
   if (brainTimer) clearTimeout(brainTimer)
   App.stateName = name
@@ -118,6 +123,7 @@ function updateGaze(): void {
 
 /* ---------- 悬停检测:只在鲸鱼/气泡上时接管鼠标 ---------- */
 function updateHover(): void {
+  if (suspended) { formStage?.hover(); return }
   const whaleHover = Whale.hitTest(App.cursor.x, App.cursor.y)
   const badgeHover = badgeHit(App.cursor.x, App.cursor.y)
   const want =
@@ -141,8 +147,8 @@ function updateHover(): void {
 
 /* ---------- 展开(压缩形态 → 悬浮窗) ---------- */
 function expand(): void {
-  // 带上当前姿态,主进程据此把悬浮窗定位到鲸鱼附近
-  void window.api.whale.expand({ x: Whale.pose.x, y: Whale.pose.y })
+  if (suspended) { void window.api.float.toggle(); return }
+  void window.api.whale.expand()
 }
 
 /* ---------- 输入 ---------- */
@@ -152,7 +158,7 @@ function acceptCursor(point: { x: number; y: number; at: number }, source: strin
   const oldX = App.cursor.x,
     oldY = App.cursor.y
   screenToWorld(point, App.workarea, App.cursor)
-  if (App.input.move(App.cursor.x, App.cursor.y, WHALE_CONFIG.interaction.dragThreshold)) {
+  if (!suspended && App.input.move(App.cursor.x, App.cursor.y, WHALE_CONFIG.interaction.dragThreshold)) {
     go('dragged', { grabDX: App.input.grabDX, grabDY: App.input.grabDY })
   }
   if (oldX !== App.cursor.x || oldY !== App.cursor.y) {
@@ -191,7 +197,7 @@ function bindInput(): void {
   }
   root.addEventListener('pointerdown', (e) => {
     const ev = e as PointerEvent
-    if (ev.button !== 0 || ev.isPrimary === false || App.input.pressed) return
+    if (suspended || ev.button !== 0 || ev.isPrimary === false || App.input.pressed) return
     sample(ev)
     App.input.press(ev.pointerId, App.cursor.x, App.cursor.y, performance.now(), Whale.pose)
     App.dragVelocity.vx = App.dragVelocity.vy = 0
@@ -222,6 +228,7 @@ function bindInput(): void {
 
 /* ---------- 主循环 ---------- */
 function renderMode(): SchedulerMode {
+  if (suspended) return 'DORMANT'
   if (
     App.input.pressed ||
     Tween.hasAnimations() ||
@@ -236,6 +243,7 @@ function renderMode(): SchedulerMode {
 }
 const poseCache = { x: 0, y: 0, visible: true, state: null as string | null }
 function loop(t: number, dt: number): void {
+  if (suspended) return
   Tween.update(t)
   /* 直接迭代 Set:resolve() 经微任务异步删除,迭代期间无同步变更 */
   for (const entry of FrameLoops) {
@@ -269,8 +277,10 @@ function bindIpc(): void {
   window.api.onWhale.workarea((wa) => {
     App.workarea = wa
     FX.resize()
-    Whale.pose.x = clamp(Whale.pose.x, 80, wa.width - 80)
-    Whale.pose.y = Math.min(Whale.pose.y, wa.height - WHALE_CONFIG.whale.floorInset)
+    if (!suspended) {
+      Whale.pose.x = clamp(Whale.pose.x, 80, wa.width - 80)
+      Whale.pose.y = Math.min(Whale.pose.y, wa.height - WHALE_CONFIG.whale.floorInset)
+    }
     updateEffectsViewport()
     requestPetFrame()
   })
@@ -283,6 +293,38 @@ function bindIpc(): void {
     }
   })
   window.api.onWhale.unread((n) => setUnread(n))
+}
+
+function freezePet(): PetVisual {
+  const snapshot = Whale.visualSnapshot()
+  snapshot.x += App.workarea.x
+  snapshot.y += App.workarea.y
+  if (suspended) return snapshot
+  suspended = true
+  App.ready = false
+  if (brainTimer) clearTimeout(brainTimer)
+  fsm.cancel()
+  App.stateName = null
+  const pointer = App.input.pointerId
+  App.input.release()
+  const root = document.getElementById('whale-root')!
+  if (pointer !== null && root.hasPointerCapture(pointer)) root.releasePointerCapture(pointer)
+  document.body.classList.remove('dragging')
+  FX.clear()
+  syncBadge(Whale.pose, false, App.workarea)
+  App.hovering = false
+  window.api.whale.setInteractive(false)
+  return snapshot
+}
+function resumePet(visual?: PetVisual): void {
+  if (visual) Whale.restoreVisual({ ...visual, x: visual.x - App.workarea.x, y: visual.y - App.workarea.y })
+  else { Whale.setWaterLine(null); Whale.show() }
+  suspended = false
+  App.ready = true
+  Whale.setMotionMode('idle')
+  updateEffectsViewport()
+  scheduleNext(250)
+  requestPetFrame()
 }
 
 /* ---------- 启动 ---------- */
@@ -312,6 +354,9 @@ async function boot(): Promise<void> {
     scheduleNext(name === 'jumpDive' ? 600 : 0)
   }
   bindInput()
+  formStage = new FormStage(document.getElementById('stage') as unknown as SVGElement, {
+    freeze: freezePet, cover: () => Whale.hide(), resume: resumePet, cursor: () => App.cursor, workarea: () => App.workarea
+  })
 
   App.ready = true
   scheduler = new FrameScheduler({

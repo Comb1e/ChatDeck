@@ -97,6 +97,12 @@ export class FSM {
     this.states.set(name, behavior)
   }
 
+  cancel(): void {
+    this.ctx?.cancel()
+    this.ctx = null
+    this.current = null
+  }
+
   to(name: string, params?: StateParams): void {
     const behavior = this.states.get(name)
     if (!behavior) throw new Error('unknown state: ' + name)

@@ -1,7 +1,10 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, screen } from 'electron'
-import { clampDragBounds, clampPoint, FLOAT_EXPANDED } from '@shared/floatLayout'
+import { clampDragBounds, clampPoint, FLOAT_EXPANDED, FLOAT_WINDOW, FLOAT_INSET, floatPanelRect, panelFromWindow } from '@shared/floatLayout'
 import type { FloatWindowState } from '@shared/api'
+import { hitSkin, panelSkin } from '@shared/whaleSkin'
+import { WHALE_CONFIG } from '@shared/whaleConfig'
+import type { Rect } from '@shared/types'
 import { JsonStore } from './store/jsonStore'
 
 interface PersistedFloatState {
@@ -16,6 +19,7 @@ const EMPTY: PersistedFloatState = { x: null, y: null, activeProviderId: null }
 const RECREATE_GUARD_MS = 10_000
 
 export interface FloatWindowDeps {
+  onRendererGone?: () => void
   /** 窗口惰性创建完成时回调(用于把视图管理器 attach 到该窗口) */
   onWindowCreated?: (win: BrowserWindow) => void
   /** 位置/尺寸变化(拖动防抖后或展开⇄折叠)回调 — 译文弹窗跟随用 */
@@ -27,7 +31,7 @@ export interface FloatWindowDeps {
 }
 
 /**
- * 悬浮窗窗口控制器:无边框透明置顶小窗(360×620)。
+ * 悬浮窗窗口控制器:无边框透明置顶小窗(384×644,内面板360×620)。
  * 收起(压缩)形态由独立的鲸鱼窗口承担,本窗口只在展开时可见。
  * 位置持久化到 float-state.json(独立文件,避免与 ui-state.json 相互覆盖)。
  * 窗口常驻(隐藏不销毁),视图缓存随之保留;启动时以隐藏方式创建,保证
@@ -42,8 +46,12 @@ export class FloatWindowController {
   private moveTimer: ReturnType<typeof setTimeout> | null = null
   private writeQueue: Promise<void> = Promise.resolve()
   private lastRecreateAt = 0
-  /** 期望窗口可见(ready-to-show 时据此决定是否自动显示,隐藏创建不闪窗) */
+  /** 期望窗口可见；渲染层 float:ready 后才允许显示。 */
   private wantVisible = false
+  private booted = false
+  private cursorTimer: ReturnType<typeof setInterval> | null = null
+  private interactive = true
+  private readonly skin = panelSkin(floatPanelRect())
 
   constructor(private readonly deps: FloatWindowDeps = {}) {}
 
@@ -73,6 +81,7 @@ export class FloatWindowController {
       return
     }
     const target = win ?? this.create()
+    if (!this.booted) return
     if (!target.isVisible()) {
       // Windows 上锁屏/全屏应用/驱动重置后 'floating' 置顶级别可能丢失,显示时重新断言
       target.setAlwaysOnTop(true, 'floating')
@@ -91,24 +100,36 @@ export class FloatWindowController {
 
   /** 启动时以隐藏方式创建窗口(渲染层保持存活:站点加载/未读统计/快速展开) */
   ensureCreated(): void {
-    if (!this.getWindow()) this.create()
+    const win = this.getWindow()
+    if (!win) this.create()
+    else if (win.webContents.isCrashed()) this.recreateIfDue()
   }
 
-  /** 在指定屏幕位置(如鲸鱼当前位置附近)显示悬浮窗 */
-  showAt(point: { x: number; y: number }): void {
+  handleReady(): void {
+    this.booted = true
+    if (this.wantVisible) this.show()
+  }
+
+  getPanelBounds(): Rect {
+    return panelFromWindow((this.getWindow() ?? this.create()).getBounds())
+  }
+
+  /** Coordinates and persisted positions always describe the 360×620 panel. */
+  prepareAt(point: { x: number; y: number }): Rect {
     const win = this.getWindow() ?? this.create()
     const b = win.getBounds()
-    const area = screen.getDisplayMatching({ x: point.x, y: point.y, width: b.width, height: b.height })
-      .workArea
-    const p = clampPoint(point.x, point.y, b.width, b.height, area)
-    if (p.x !== b.x || p.y !== b.y) {
-      win.setBounds({ x: p.x, y: p.y, width: b.width, height: b.height })
-      this.savedX = p.x
-      this.savedY = p.y
-      this.deps.onMoved?.()
-      void this.persist()
-    }
-    this.show()
+    const desired = { x: Math.round(point.x - FLOAT_INSET.x), y: Math.round(point.y - FLOAT_INSET.y), ...FLOAT_WINDOW }
+    const area = screen.getDisplayNearestPoint({
+      x: Math.round(point.x + FLOAT_EXPANDED.width / 2),
+      y: Math.round(point.y + FLOAT_EXPANDED.height / 2)
+    }).workArea
+    const p = clampPoint(desired.x, desired.y, b.width, b.height, area)
+    win.setBounds({ ...p, ...FLOAT_WINDOW })
+    this.savedX = p.x + FLOAT_INSET.x
+    this.savedY = p.y + FLOAT_INSET.y
+    this.deps.onMoved?.()
+    void this.persist()
+    return this.getPanelBounds()
   }
 
   /**
@@ -170,17 +191,18 @@ export class FloatWindowController {
     const old = this.getWindow()
     if (old) {
       const b = old.getBounds()
-      this.savedX = b.x
-      this.savedY = b.y
+      this.savedX = b.x + FLOAT_INSET.x
+      this.savedY = b.y + FLOAT_INSET.y
       this.deps.onDetachViews?.()
       old.destroy()
     }
     this.win = null
-    this.show()
+    this.booted = false
+    this.create()
   }
 
   private create(): BrowserWindow {
-    const size = FLOAT_EXPANDED
+    const size = FLOAT_WINDOW
     const point = this.initialPoint(size.width, size.height)
     const win = new BrowserWindow({
       ...size,
@@ -204,11 +226,24 @@ export class FloatWindowController {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
-        spellcheck: false
+        spellcheck: false,
+        backgroundThrottling: false
       }
     })
     // 'floating' 级别:压过普通应用窗口,但不盖系统托盘/输入法
     win.setAlwaysOnTop(true, 'floating')
+    // setShape disrupts transparent child-view composition on some Windows systems.
+    this.cursorTimer = setInterval(() => {
+      if (win.isDestroyed() || !win.isVisible()) return
+      const cursor = screen.getCursorScreenPoint(), b = win.getBounds()
+      const point = { x: cursor.x - b.x, y: cursor.y - b.y }
+      const insideWindow = point.x >= 0 && point.y >= 0 && point.x < b.width && point.y < b.height
+      const on = !insideWindow || hitSkin(this.skin, point)
+      if (on !== this.interactive) {
+        this.interactive = on
+        win.setIgnoreMouseEvents(!on, { forward: true })
+      }
+    }, WHALE_CONFIG.performance.cursorPollMs)
     // 跟随虚拟桌面且不被全屏应用盖住(多桌面切换/全屏视频时胶囊不丢)
     win.setVisibleOnAllWorkspaces(true)
     // 拖动硬钳制:手动拖动落地前拦截(will-move),拖不进任务栏/屏幕外;
@@ -221,18 +256,19 @@ export class FloatWindowController {
         win.setBounds({ x: point.x, y: point.y, width: newBounds.width, height: newBounds.height })
       }
     })
-    // ready-to-show 后再显示,避免透明窗口在 Windows 上闪黑底;
-    // 隐藏创建(ensureCreated)不自动显形,由 show() 的 wantVisible 驱动
-    win.on('ready-to-show', () => {
-      if (this.wantVisible) win.show()
-    })
+    // FloatReady follows the first layout and shared-frame paint; hidden creation never flashes.
     win.on('move', () => this.schedulePositionSave())
     win.on('closed', () => {
+      if (this.cursorTimer) clearInterval(this.cursorTimer)
+      this.cursorTimer = null
+      this.interactive = true
       this.win = null
     })
     // 悬浮窗自身页面崩溃(白屏/透明) → 自动重建;受最小间隔保护防崩溃循环
     win.webContents.on('render-process-gone', () => {
       if (this.getWindow() !== win) return
+      this.booted = false
+      this.deps.onRendererGone?.()
       this.recreateIfDue()
     })
     if (!app.isPackaged) {
@@ -257,9 +293,11 @@ export class FloatWindowController {
   }
 
   private initialPoint(width: number, height: number): { x: number; y: number } {
-    const area = screen.getPrimaryDisplay().workArea
+    let area = screen.getPrimaryDisplay().workArea
     if (this.savedX !== null && this.savedY !== null) {
-      return clampPoint(this.savedX, this.savedY, width, height, area)
+      const x = this.savedX - FLOAT_INSET.x, y = this.savedY - FLOAT_INSET.y
+      area = screen.getDisplayMatching({ x, y, width, height }).workArea
+      return clampPoint(x, y, width, height, area)
     }
     // 无历史位置:默认落在工作区右下角
     return clampPoint(
@@ -284,8 +322,8 @@ export class FloatWindowController {
       if (point.x !== b.x || point.y !== b.y) {
         win.setBounds({ x: point.x, y: point.y, width: b.width, height: b.height })
       }
-      this.savedX = point.x
-      this.savedY = point.y
+      this.savedX = point.x + FLOAT_INSET.x
+      this.savedY = point.y + FLOAT_INSET.y
       this.deps.onMoved?.()
       void this.persist()
     }, 400)

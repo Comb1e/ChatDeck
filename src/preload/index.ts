@@ -19,6 +19,11 @@ import type { TranslateConfig, TranslatePairId, TranslatePopupState } from '@sha
  * 渲染层不直接接触 Node / Electron 原生模块。
  */
 const api: DeckApi = {
+  form: {
+    ready: () => ipcRenderer.send(IPC.FloatReady),
+    report: (report) => ipcRenderer.send(IPC.FormReport, report),
+    onCommand: (cb) => { ipcRenderer.on(IPC.FormCommand, (_e, command) => cb(command)) }
+  },
   providers: {
     list: () => ipcRenderer.invoke(IPC.ProvidersList),
     save: (input: ProviderInput) => ipcRenderer.invoke(IPC.ProvidersSave, input),
@@ -53,8 +58,7 @@ const api: DeckApi = {
     ready: (): void => ipcRenderer.send(IPC.WhaleReady),
     getWorkarea: () => ipcRenderer.invoke(IPC.WhaleGetWorkarea) as Promise<Rect>,
     setInteractive: (on: boolean): void => ipcRenderer.send(IPC.WhaleSetInteractive, Boolean(on)),
-    expand: (pose: { x: number; y: number }) =>
-      ipcRenderer.invoke(IPC.WhaleExpand, pose) as Promise<boolean>
+    expand: () => ipcRenderer.invoke(IPC.WhaleExpand) as Promise<boolean>
   },
   app: {
     openSettings: () => ipcRenderer.invoke(IPC.AppOpenSettings) as Promise<boolean>,

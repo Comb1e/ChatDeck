@@ -1,6 +1,6 @@
 # ChatDeck 架构
 
-> 用最简单的话说：ChatDeck 是一个常驻桌面的「悬浮小窗套壳浏览器」+ 一只小鲸鱼 + 一个余额小窗——平时鲸鱼在桌面上游，点一下它展开内嵌 LLM 网页的悬浮窗；收起后鲸鱼在悬浮窗原来的位置破水浮出。托盘右键放设置、余额监控等入口；没有主窗口。
+> 用最简单的话说：ChatDeck 是一个常驻桌面的「悬浮小窗套壳浏览器」+ 一只小鲸鱼 + 一个余额小窗——平时鲸鱼在桌面上游，点一下它展开内嵌 LLM 网页的悬浮窗；收起时倒放同一段张嘴变形动画，在窗口当前位置变回鲸鱼。托盘右键放设置、余额监控等入口；没有主窗口。
 
 ## 技术栈
 
@@ -14,7 +14,7 @@ Electron（主进程 + WebContentsView）+ Vue 3 + TypeScript + Pinia + electron
 ```
 ┌────────────────────────────┐  ┌──────────────────────────────┐  ┌────────────────────────┐
 │ FloatWindow (悬浮窗·展开态)  │  │ WhaleWindow (鲸鱼·压缩态)     │  │ BalanceWindow (余额小窗)│
-│ 360×620 frame:false         │  │ 覆盖主显示器工作区            │  │ 196×56 起,按内容自适应   │
+│ 384×644,内面板360×620         │  │ 覆盖当前显示器工作区            │  │ 196×56 起,按内容自适应   │
 │ + transparent + alwaysOnTop │  │ 默认鼠标穿透(forward)         │  │ 无边框透明胶囊/卡片      │
 │ ┌────────────────────────┐ │  │ ┌──────────────────────────┐ │  │ ┌────────────────────┐ │
 │ │ FloatHeader (HTML)      │ │  │ │ SVG 鲸鱼 + Canvas 特效    │ │  │ │ 胶囊:各站点余额      │ │
@@ -25,7 +25,7 @@ Electron（主进程 + WebContentsView）+ Vue 3 + TypeScript + Pinia + electron
 │ │ 底部提示词条 (HTML)      │ │  │ 悬停鲸鱼 → 开启窗口交互        │  │ 托盘右键「余额监控」开关  │
 │ └────────────────────────┘ │  │ 单击鲸鱼 → 展开悬浮窗          │  │ 与悬浮窗/鲸鱼互不影响    │
 └────────────────────────────┘  └──────────────────────────────┘  └────────────────────────┘
-        鲸鱼 ⇄ 悬浮窗两种形态互斥显示（主进程编排）；余额小窗独立并存，托盘开关控制显隐
+        稳定时两种形态互斥；交接时短暂重叠同一个外壳；余额小窗独立并存，托盘开关控制显隐
 ```
 
 **关键点：WebContentsView 是原生层，永远盖在 HTML 上面。** 所以悬浮窗 UI 划分为两类：
@@ -46,16 +46,17 @@ app（单实例 + 托盘常驻,窗口全关也不退出,退出只走托盘「退
 └─ TranslatePopup 译文弹窗(依附悬浮窗位置,见下节)    ── 无站点视图
 ```
 
-- **形态互斥**：鲸鱼可见 ⇔ 悬浮窗隐藏，反之亦然。切换由主进程 `index.ts` 的 `expandFloat()` / `collapseToWhale()` 编排（IPC `whale:expand` / `float:collapse`、托盘「悬浮窗 ⇄ 鲸鱼」、头部收起按钮都走同一对函数）。
-  - **展开**（鲸鱼 → 悬浮窗）：鲸鱼渲染层单击后把世界姿态经 `whale:expand` 上报，主进程把鲸鱼点换算成屏幕坐标 → 悬浮窗以「水平居中于鲸鱼、顶部在鲸鱼上方约 120px」落位（`clampPoint` 夹进工作区），显示悬浮窗并隐藏鲸鱼。
-  - **收起**（悬浮窗 → 鲸鱼）：取悬浮窗中心屏幕坐标 → 隐藏悬浮窗、显示鲸鱼 → 发 `ev:whale-command {type:'surface'}`，鲸鱼在该点执行「破水浮出」过渡（与招牌动作的浮出视觉同一套编排），浮出后回到正常行为循环。
-- **鲸鱼窗口**（`whaleWindow.ts`，规格与 whale-pet 一致）：透明无边框窗口**覆盖主显示器工作区**，鲸鱼完全在 Chromium 内游动（原生窗口不动，避免原生移动与渲染合成不同步）。默认 `setIgnoreMouseEvents(true, {forward: true})` **鼠标穿透**；渲染层 hitTest 命中鲸鱼/未读气泡时才 `setInteractive(true)` 接管鼠标（离开即恢复穿透）。渲染层初始化完成（`whale:ready`）后才显示，避免闪空。`display-metrics-changed` 时窗口跟随工作区并通知渲染层。
-- **悬浮窗**：无边框透明置顶小窗，**只有展开态 360×620**（旧的 148×64 药丸形态已删除，由鲸鱼取而代之）。启动时以 `ensureCreated()` **隐藏创建**——渲染层保持存活，站点视图加载、未读统计、快速展开都依赖它；`floatStore.sync` 只把**当前活动站点**以非零矩形挂载，其余站点视图按休眠策略销毁/保留。
+- **形态协调器**（`main/formController.ts`）：所有展开/收起入口都发目标形态，包括桌宠、气泡、托盘、头部按钮、Usage 页和二次启动。它负责准备、可逆播放、窗口交接、超时和崩溃恢复。
+- **鲸鱼窗口**：覆盖当前显示器工作区的透明窗口，兼作变形动画舞台。平时只有鲸鱼/气泡命中时接管鼠标；动画期间只有当前外形接管鼠标，点击可立即反向。收起到副屏后，鲸鱼继续在该屏活动。
+- **悬浮窗**：原生窗口 384×644 DIP，左/上各 24 DIP 给尾巴留空间；内面板 360×620。聊天视图为 `(34,108,340,484)`，Vue 布局和主进程共用尺寸。蓝色头部、边框、白眼睛和外伸尾巴来自共用 SVG 画笔。
+- **真实内容交接**：张嘴 200ms + 外壳增长 500ms，共用一个 0→1 进度；倒放只改变进度方向。增长时只有空外壳，完成后显示聊天和按钮；收起先换成空外壳，再倒放。WebContentsView 不参与 CSS 变形，也不为切换而卸载或重新导航。
+- **拖动与坐标**：保存位置仍表示内面板左上角，旧位置文件可直接读取；译文弹窗也跟随内面板。倒放路径随内面板位移平移，终点鲸鱼完整夹进所在屏幕。透明留白用共用外形命中测试与光标轮询穿透，避免设置 Windows 原生窗口形状干扰透明子视图。
+
 - **设置窗口**：普通有框窗口（`settingsWindow.ts`），渲染层入口 `settings.html`，顶部标签页「设置 / 提示词库」，内部复用 `SettingsPanel`/`PromptPanel`/`PromptEditor`/`PromptFill` 组件（与悬浮窗共用 stores）。入口三处：托盘「设置…」、悬浮窗头部齿轮、`app:open-settings` IPC；已开则聚焦。
 - **余额小窗**（`balance/window.ts`）：无边框透明胶囊/卡片，196×56 起按渲染层内容自适应（胶囊每站点一行 / 展开卡片 372 宽、高至多 890 + 主进程按工作区钳制）。惰性创建、`showInactive()` 不抢焦点、位置记忆 + 拖动过程屏幕内硬约束 + 反 Aero Snap（外部改尺寸立即拉回）。**与悬浮窗/鲸鱼形态完全无关**：托盘右键「余额监控」勾选项开关它，显隐状态持久化到配置、下次启动按上次状态恢复（默认隐藏）。窗口层级 'floating'（与悬浮窗/鲸鱼同级）。
 - **登录态互通**：站点视图与历史桌面版用同名分区 `persist:provider-<id>`，同名 partition 即同一 session，历史登录数据直接沿用。
 - **移动端 UA**：悬浮窗视图用 `webContents.setUserAgent()`（视图级）盖移动端 UA 匹配 360 宽面板，**不能**用 `session.setUserAgent`（会污染同分区其他视图）。厂商自带 `userAgent` 配置优先。
-- **先挂载后加载（v0.7.1 不变量）**：WebContentsView 必须在"已挂载且有尺寸"的状态下 `loadURL`——未挂载（零尺寸）状态加载的页面，挂上窗口后视觉正常但输入/显示概率性脱同步（v0.7.0 Usage 页"鼠标错位/窗格不切换"的根因）。`ViewManager.loadNow` 是所有导航的唯一入口：先 `mountWithLastLayout`（用最近一次布局的窗格矩形挂载，渲染层随后的 `setLayout` 同矩形幂等覆盖），再加载。
+- **先挂载后加载**：WebContentsView 在非零矩形挂载后再加载页面，使显示与鼠标坐标一致。`ViewManager.loadNow` 是所有导航的唯一入口：先 `mountWithLastLayout`（用最近一次布局的窗格矩形挂载，渲染层随后的 `setLayout` 同矩形幂等覆盖），再加载。
 - **隐藏不刷新**：切到提示词模式时，站点视图用**零矩形** `{0,0,0,0}` 保持挂载（`setLayout([])` 会 detach→重挂→整页刷新）。
 - **独立持久化**：悬浮窗位置与活动站点存 `float-state.json`，不与其它配置混写。
 - **拖动硬钳制**：`will-move`（手动拖动落地前触发，程序性 setBounds 不触发）逐帧钳制位置（`shared/floatLayout.ts` 的 `clampDragBounds` 纯函数）——底边完全不允许越过工作区底（拖不进任务栏），左右上允许部分越界但保留 8px 可见条带（兼顾跨显示器拖动）；拖动结束落盘前再用 `clampPoint` 兜底钳制并持久化，启动还原位置同样过 `clampPoint`（历史坏位置自动治愈）。
@@ -65,11 +66,11 @@ app（单实例 + 托盘常驻,窗口全关也不退出,退出只走托盘「退
 - **ProviderStore 内存缓存（CPU 优化）**：`list()` 结果缓存（save/remove/init 失效）——`FViewSetLayout` 每次都调 `ensureProviders → providers.list()`；`ProvidersSave`/`ProvidersList` 会把最新 Provider 快照同步注册进管理器（休眠阈值/UA 改动立即生效）。
 - **开机自启**：设置窗口「通用 → 开机自动启动」开关（默认关闭），走 `app:get/set-autostart` IPC → `app.setLoginItemSettings`。Windows 落在 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，值指向**当前 exe**——portable exe 移动位置后需重新开关一次以刷新路径；注册表读写可能被安全软件拦截，开关状态以 `getLoginItemSettings()` 回读为准。
 - **dev watcher 防抖 + 守卫**：main/preload 的 `build.watch.buildDelay: 400` 合并快速连续编辑（rollup watch 对失败/空重建会删除上一轮产物，与重启竞态曾导致 out/main 写空、dev 死亡）；`scripts/patch-electron-vite.mjs`（postinstall 重放）给 electron-vite 重启逻辑加"入口产物缺失则跳过本次重启"的守卫。
-- 透明窗口注意：`backgroundColor` 必须 `#00000000`；`ready-to-show` 后再 show（防 Windows 黑底）；悬浮窗 `resizable:false` 避免破坏透明合成；鲸鱼窗口 `backgroundThrottling:false`（隐藏期间同步/未读链路照常）。
+- 透明窗口注意：`backgroundColor` 必须 `#00000000`；鲸鱼 `whale:ready`、悬浮窗 `float:ready` 后再显示（初始布局和外壳已绘制）；悬浮窗 `resizable:false` 避免破坏透明合成；鲸鱼窗口 `backgroundThrottling:false`（隐藏期间同步/未读链路照常）。
 
 ## 鲸鱼形态（悬浮窗压缩态）实现
 
-移植自 whale-pet（`E:\Projects\whale`），渲染层在 `src/renderer/src/whale/`，全部为纯 TypeScript 模块，行为/物理/视觉与原项目逐行一致；与 ChatDeck 的接缝只有 4 处显式胶水。
+移植自 whale-pet（`E:\Projects\whale`），渲染层在 `src/renderer/src/whale/`，全部为纯 TypeScript 模块，普通游动和物理继续由行为状态机控制，形态动画则由独立的协调器暂时接管。
 
 ### 渲染层模块与数据流
 
@@ -77,10 +78,10 @@ app（单实例 + 托盘常驻,窗口全关也不退出,退出只走托盘「退
 主进程 WhaleWindowController                     鲸鱼渲染层（whale.html）
 ├─ 光标轮询 33ms ──ev:whale-cursor──▶ acceptCursor（视线跟随/悬停判定/拖拽）
 ├─ 工作区变化   ──ev:whale-workarea─▶ 复位姿态与特效取景
-├─ 行为命令     ──ev:whale-command──▶ jumpDive（托盘招牌动作）/ surface（收起时定点浮出）
+├─ 行为命令     ──ev:whale-command──▶ jumpDive（托盘招牌动作）
 ├─ 未读数       ──ev:whale-unread───▶ 头顶气泡显隐与数字
 └─ setInteractive(悬停命中) ◀──whale:set-interactive── 渲染层
-   move/resize 常驻                ──whale:expand(姿态)─▶ 展开悬浮窗
+   move/resize 常驻                ──whale:expand─▶ 请求展开
 ```
 
 ```
@@ -94,18 +95,46 @@ whale/app.ts（编排:主循环/行为大脑/输入/接线）
   └─ whale/badge.ts    未读气泡（头顶跟随,点击展开）  whale/context.ts  App 数据单例
 ```
 
-- **固定窗口 + 内部游动**：原生窗口不动（唯一例外是显示器拓扑变化时同步工作区），所有运动都是渲染层内的一次 transform 合成——避免「原生移动」与「Chromium 合成」不同步的竞态。
+- **固定窗口 + 内部游动**：原生窗口在游动时不动；切换显示器或显示器拓扑变化时同步工作区，所有运动都是渲染层内的一次 transform 合成——避免「原生移动」与「Chromium 合成」不同步的竞态。
 - **单写者渲染**：每帧先推进补间与逐帧循环，再合成一次姿态快照（量化到 0.1，呼吸 0.001），SVG transform / 命中测试 / 入水几何全部用同一快照；变换串与上次比对相同则跳过 DOM 写入；隐藏期跳过全部 DOM 写。
 - **鼠标穿透 + 悬停接管**：窗口默认 `ignoreMouseEvents(true, {forward:true})`（鼠标移动仍转发渲染层），渲染层每帧 `hitTest`（反演合成变换，跟随朝向/压缩/倾斜/随动）+ 气泡矩形判定；命中才开启交互，离开立即恢复穿透。
 
-### 与 whale-pet 的四点差异（本轮全部为 ChatDeck 集成胶水，均已确认）
+### 可逆形态动画的数据流
 
-1. **单击鲸鱼 → 展开悬浮窗**（原为「开心跳」）：快速点击判定（<350ms、位移<10px）成立即上报姿态展开；拖拽/投掷、按压冻结姿态等其余输入行为不变。
-2. **鼠标悬浮鲸鱼 → 触发「开心跳」**（替代原单击触发）：悬停上升沿（非按压、非 jumpDive/surface 中）触发，与悬停接管鼠标的同一套判定。
-3. **头顶未读气泡**：未读站点数 >0 时在鲸鱼上方显示计数气泡（药丸时代红点的等价物），位置每帧跟随、可点击展开、计入交互接管区；数据源是悬浮窗渲染层的 `providers.unread`（`float:unread-count` 推送 → 主进程转发）。
-4. **surface 定点浮出状态**：新增第 12 个状态，复用招牌动作的入水/浮出编排（水线裁剪 + 涟漪 + outBack 上浮 + 压缩回正），在悬浮窗原位置破水而出。
+```mermaid
+flowchart LR
+    Inputs[鲸鱼/气泡/按钮/托盘/Usage] --> Coordinator[主进程 FormController]
+    Coordinator -->|capture / prepare / play / settle| Stage[鲸鱼窗口 FormStage]
+    Stage -->|captured / prepared / complete| Coordinator
+    Stage --> Clock[单一可逆时间轴 0 到 1]
+    Clock --> Geometry[共享轮廓采样与形变]
+    Geometry --> Painter[共享 SkinRenderer]
+    Painter --> Animation[动画舞台]
+    Painter --> Frame[悬浮窗固定外壳]
+    Coordinator -->|显示 / present| Float[真实悬浮窗与站点视图]
+    Float -->|presented| Coordinator
+```
 
-其余（游动规划、招牌动作起跳下潜、睡觉 Zzz、转圈、拖拽投掷与落地形变、视线跟随、眨眼、呼吸/随动、帧调度模式）与原项目一致。
+```mermaid
+stateDiagram-v2
+    [*] --> stable
+    stable --> preparing: 请求另一形态
+    preparing --> animating: 两端就绪，外壳已绘制
+    preparing --> stable: 请求返回原形态
+    animating --> animating: 反向请求，只改方向
+    animating --> handoff: 进度到 1
+    handoff --> stable: 悬浮窗已绘制
+    handoff --> animating: 反向请求
+    animating --> stable: 进度到 0，恢复鲸鱼
+    preparing --> stable: 超时/崩溃，选可用窗口
+    animating --> stable: 超时/崩溃/屏幕变化
+```
+
+- `stable` 保存当前形态；每轮准备有 `id`，每次方向变化有 `revision`，过期回执不能改变新一轮显隐。
+- 同方向请求幂等；反向请求从当前进度立刻倒放。2 秒守卫防止等待回执后两窗都消失。
+- 开始时冻结真实显示快照（含镜像、尾摆、呼吸和表情），取消行为、拖拽、悬停和粒子。鲸鱼隐藏期间行为循环休眠，未读数继续接收；恢复时先接上精确端点，再柔和恢复环境动作。
+- 身体、嘴部、尾巴、眼睛的原始路径放在 `shared/whaleGeometry.ts`；时间与外观参数放在 `shared/formTransition.ts`。轮廓按弧长采样，匹配绕行方向与起点后插值，因此左右朝向共用同一套形变。
+- 单击鲸鱼/未读气泡请求展开；普通悬停触发开心跳；拖拽投掷、招牌起跳下潜、睡觉与未读统计仍使用各自已有状态机。
 
 ### 状态机
 
@@ -114,7 +143,7 @@ whale/app.ts（编排:主循环/行为大脑/输入/接线）
   idle ⇄ swim ⇄ jumpDive ⇄ spin ⇄ sleep（行为大脑按权重随机挑选,1.2~4.2s 间隔）
   held ──拖拽阈值──▶ dragged ──释放──▶ falling ──落地──▶ landing
   landing ──弹跳阈值──▶ bouncing ──▶ falling        landing ──▶ idle
-  happy（悬浮触发,可被按压打断）    surface（收起交接,定点浮出后回 idle）
+  happy（悬浮触发,可被按压打断）    surface（定点浮出行为原语）
   任意状态 ──按压──▶ held（立即冻结姿态,取消上一个运动写者）
 ```
 

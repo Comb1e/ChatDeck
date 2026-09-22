@@ -19,15 +19,8 @@ import type { SettingsWindowController } from './settingsWindow'
 import type { TranslateService } from './translateService'
 import type { TranslatePopupController } from './translateWindow'
 
-/** 悬浮窗 ⇄ 鲸鱼(压缩形态)切换编排,由 index.ts 注入 */
-export interface FormSwitcher {
-  /** 收起悬浮窗,鲸鱼在悬浮窗原位置破水浮出 */
-  collapseToWhale(): void
-  /** 展开悬浮窗(可带屏幕锚点,如鲸鱼当前位置) */
-  expandFloat(at?: { x: number; y: number }): void
-  /** 展开⇄鲸鱼互切 */
-  toggleForm(): void
-}
+import type { FormController } from './formController'
+import type { FormReport } from '@shared/formTransition'
 
 export interface IpcDeps {
   providers: ProviderStore
@@ -43,7 +36,7 @@ export interface IpcDeps {
   settingsWin: SettingsWindowController
   translate: TranslateService
   translateWin: TranslatePopupController
-  forms: FormSwitcher
+  forms: FormController
 }
 
 /** 注册全部 IPC；主→渲染事件经 hooks 由 viewManager 回调驱动 */
@@ -120,7 +113,7 @@ export function registerIpc(deps: IpcDeps): void {
     }
     if (!id) return
     registerAll(await providers.list()) // 视图管理器必须认识目标 provider
-    forms.expandFloat() // 鲸鱼形态先展开悬浮窗
+    forms.request('float') // 鲸鱼形态先展开悬浮窗
     const w = floatWin.getWindow()
     if (w && !w.isDestroyed()) w.webContents.send(IPC.EvFUsageOpen, { id, url: raw })
   }
@@ -190,16 +183,16 @@ export function registerIpc(deps: IpcDeps): void {
   // ---- 悬浮窗窗口控制 ----
 
   ipcMain.handle(IPC.FloatToggle, () => {
-    forms.toggleForm()
+    forms.toggle()
     return true
   })
   ipcMain.handle(IPC.FloatCollapse, () => {
-    forms.collapseToWhale()
+    forms.request('whale')
     return true
   })
   ipcMain.handle(IPC.FloatHide, () => {
     // 「隐藏悬浮窗」= 收起为鲸鱼形态(压缩形态即悬浮窗的收起态)
-    forms.collapseToWhale()
+    forms.request('whale')
     return true
   })
   ipcMain.handle(IPC.FloatGetState, () => floatWin.getState())
@@ -211,11 +204,23 @@ export function registerIpc(deps: IpcDeps): void {
 
   ipcMain.handle(IPC.WhaleGetWorkarea, () => whaleWin.currentWorkarea())
   ipcMain.on(IPC.WhaleSetInteractive, (_e, on: unknown) => whaleWin.setInteractive(Boolean(on)))
-  ipcMain.on(IPC.WhaleReady, () => whaleWin.handleReady())
-  ipcMain.handle(IPC.WhaleExpand, (_e, pose: { x?: unknown; y?: unknown }) => {
-    // 鲸鱼世界坐标(工作区系) → 屏幕锚点:悬浮窗横向居中对准鲸鱼
-    const p = whaleWin.screenFromWorld({ x: Number(pose?.x) || 0, y: Number(pose?.y) || 0 })
-    forms.expandFloat(p)
+  ipcMain.on(IPC.WhaleReady, event => {
+    if (event.sender !== whaleWin.getWindow()?.webContents) return
+    whaleWin.handleReady()
+    forms.rendererReady('whale')
+  })
+  ipcMain.on(IPC.FloatReady, event => {
+    if (event.sender !== floatWin.getWindow()?.webContents) return
+    floatWin.handleReady()
+    forms.rendererReady('float')
+  })
+  ipcMain.on(IPC.FormReport, (event, report: FormReport) => {
+    if (!report || typeof report.id !== 'number') return
+    if (event.sender === whaleWin.getWindow()?.webContents) forms.report(report, 'whale')
+    else if (event.sender === floatWin.getWindow()?.webContents) forms.report(report, 'float')
+  })
+  ipcMain.handle(IPC.WhaleExpand, () => {
+    forms.request('float')
     return true
   })
 

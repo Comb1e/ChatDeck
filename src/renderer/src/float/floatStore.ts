@@ -75,7 +75,7 @@ export const useFloatStore = defineStore('float', {
       })
 
       this.ready = true
-      this.sync()
+      await this.sync()
     },
 
     activate(id: string): void {
@@ -104,7 +104,7 @@ export const useFloatStore = defineStore('float', {
     },
 
     /** 把视图矩形同步给主进程;提示词模式下用零矩形保持挂载不刷新 */
-    sync(): void {
+    async sync(): Promise<void> {
       if (!this.ready) return
       const entries =
         this.mode === 'chat' && this.activeId
@@ -112,7 +112,7 @@ export const useFloatStore = defineStore('float', {
           : this.activeId
             ? [{ id: this.activeId, rect: HIDDEN_RECT }]
             : []
-      void window.api.fview.setLayout(entries)
+      await window.api.fview.setLayout(entries)
     },
 
     showToast(msg: string): void {

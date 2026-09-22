@@ -7,11 +7,14 @@ import type { Rect } from '@shared/types'
 
 /**
  * 鲸鱼窗口(悬浮窗压缩形态)控制器——窗口规格与 whale-pet 保持一致:
- * 透明无边框窗口覆盖主显示器工作区,鲸鱼完全在 Chromium 内游动(原生窗口不动);
+ * 透明无边框窗口覆盖当前显示器工作区,鲸鱼完全在 Chromium 内游动(原生窗口不动);
  * 默认鼠标穿透,渲染层检测到悬停后才开启交互(setIgnoreMouseEvents forward)。
  * 渲染层初始化完成(whale:ready)后再显示,避免闪空。
  */
 export class WhaleWindowController {
+  constructor(private onRendererGone: () => void = () => {}) {}
+
+  ensureCreated(): void { if (!this.getWindow()) this.create() }
   private win: BrowserWindow | null = null
   private workarea: Rect | null = null
   private cursorTimer: ReturnType<typeof setInterval> | null = null
@@ -88,9 +91,13 @@ export class WhaleWindowController {
     return { x: area.x + p.x, y: area.y + p.y }
   }
 
-  /** 显示器变化后把窗口同步回主显示器工作区,并通知渲染层 */
+  /** 跟随当前显示器；原显示器移除时选择仍然存在的显示器。 */
   syncWorkarea(): void {
-    const wa = screen.getPrimaryDisplay().workArea
+    const wa = this.workarea ? screen.getDisplayMatching(this.workarea).workArea : screen.getPrimaryDisplay().workArea
+    this.setWorkarea(wa)
+  }
+
+  setWorkarea(wa: Rect): void {
     this.workarea = wa
     const win = this.getWindow()
     if (!win) return
@@ -151,6 +158,7 @@ export class WhaleWindowController {
     const win = new BrowserWindow({
       ...wa,
       transparent: true,
+      backgroundColor: '#00000000',
       frame: false,
       hasShadow: false,
       alwaysOnTop: true,
@@ -181,7 +189,8 @@ export class WhaleWindowController {
     win.webContents.on('render-process-gone', () => {
       if (this.getWindow() !== win) return
       this.booted = false
-      if (this.wanted) this.recreate()
+      this.onRendererGone()
+      this.recreate()
     })
     if (!app.isPackaged) {
       // 开发期把鲸鱼渲染层日志转到终端,便于验证

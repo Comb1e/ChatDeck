@@ -18,6 +18,7 @@ import type {
   BillingReport
 } from './balance'
 import type { TranslateConfig, TranslatePairId, TranslatePopupState } from './translate'
+import type { FormCommand, FormReport } from './formTransition'
 
 /** 主进程 → 鲸鱼渲染层的行为命令 */
 export type WhaleCommand = { type: 'jump-dive' } | { type: 'surface'; x: number; y: number }
@@ -31,6 +32,11 @@ export interface WhaleCursorPoint {
 
 /** 渲染层可用的宿主 API（preload 经 contextBridge 暴露，结构以本接口为准） */
 export interface DeckApi {
+  form: {
+    ready(): void
+    report(report: FormReport): void
+    onCommand(cb: (command: FormCommand) => void): void
+  }
   providers: {
     list(): Promise<Provider[]>
     save(input: ProviderInput): Promise<Provider[]>
@@ -75,8 +81,8 @@ export interface DeckApi {
     getWorkarea(): Promise<Rect>
     /** 悬浮在鲸鱼/气泡上时开启窗口交互,离开后恢复鼠标穿透 */
     setInteractive(on: boolean): void
-    /** 单击鲸鱼:携带世界姿态展开悬浮窗 */
-    expand(pose: { x: number; y: number }): Promise<boolean>
+    /** 请求展开；协调器随后采集实际显示姿态。 */
+    expand(): Promise<boolean>
   }
   /** 应用级入口 */
   app: {

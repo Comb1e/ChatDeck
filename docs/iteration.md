@@ -1,5 +1,44 @@
 # 迭代记录
 
+## v0.10.1（2026-09-22）
+
+修复（用户反馈）：①收起为桌宠后屏幕上残留一条 1px 蓝色竖线；②收起悬浮窗的闪烁仍未解决——现方案"先淡入一层蓝色外壳盖住 UI 再融化"观感即闪烁，要求去掉覆盖环节、UI 平滑收起。另将开发期 CDP 验证钩子（CHATDECK_USERDATA/CHATDECK_CDP,仅 `!app.isPackaged` 生效）固化为常驻调试入口。
+
+### 上版问题与方法根因
+
+- **蓝线**：对用户截图逐像素分析,线为 1 物理像素宽、约面板高、色值=鲸鱼蓝 rgb(77,107,254) 在 ~16% alpha——即外壳面板圆角矩形贴窗口边缘的**抗锯齿边缘列**。收起融化结束后外壳隐藏,透明鲸鱼窗口该区域此后再无重绘,DWM 合成面上该残柱永久停留;既有的 heal() 只在休眠唤醒/GPU 重置时触发,覆盖不到此场景。
+- **收起闪烁**：v0.9.1 的修复用"半透明蓝色外壳淡入盖住 UI"避免硬切,但淡入的本身就是用户看到的闪烁（实测连拍:触发后 ~70-150ms 整块 UI 被蓝色框架+暗色内容矩形盖住,再融化成鲸鱼）。根因:外壳是画出来的蓝色卡片,与真实 UI 像素不同,任何"盖住"动作必然可见。
+- 方法：**用真实 UI 自己当外壳**。收起时主进程捕获悬浮窗整窗快照（主页 `capturePage` + 各站点 WebContentsView 按布局矩形逐视图捕获——实测确认 WebContentsView 是独立合成面,不在宿主窗口截图内,必须分开捕获后叠加）,随 prepare 命令发鲸鱼渲染层;外壳端点改为整窗矩形（蓝色主体填充透明、装饰塌缩、快照图裁剪在主体轮廓内）,鲸鱼窗口显示瞬间其内容与真实 UI 逐像素一致（连拍帧差 0.00）,DWM 显示过渡期间两窗叠放不可感知;covered 延迟 340ms 后隐藏悬浮窗开始融化,融化中快照与蓝色主体反向交叉淡化——用户看到的就是"UI 自己融化成鲸鱼"。捕获失败（500ms 超时/窗口不可见/解码失败）自动退回原覆盖淡入路径。
+
+### 本版改进
+
+- `shared/whaleSkin.ts`:新增 `windowFromPanel`（面板↔窗口矩形换算,与 panelFromWindow 互逆）与 `shotSkin`（整窗圆角矩形端点,半径 16 与页面 `--float-radius` 一致,装饰塌缩为点,`bodyOpacity=0`）;`createMorph` 增加 shotMode,融化中 `bodyOpacity = 1-ink` 实现快照⇄蓝色主体交叉淡化;`SkinFrame` 增加 `bodyOpacity` 字段。
+- `shared/formTransition.ts`:`FloatShot` 类型 + prepare 命令携带可选 `shot`;`windowRadius=16`、`captureTimeoutMs=500`。
+- `main/viewManager.ts` `captureViews` / `main/floatWindow.ts` `captureWindow`:逐视图/整窗快照捕获,单张超时跳过、异常吞掉返回 null。
+- `main/formController.ts`:prepare 阶段先捕获快照再发 prepare（取消/换 revision 后的迟 resolve 有 phase 守卫,不误发）;收起两条路径统一等 covered 再隐藏悬浮窗;`finish('whale')` 落定后调用 `host.repaint('whale')` 强制整窗重绘（修蓝线）。`FormHost` 增加 `captureFloat`/`repaint`。
+- `main/whaleWindow.ts` `repaint()`:窗口稳定可见时的 `webContents.invalidate()`,与 heal() 的 hide→show 不同,不重建表面、无空帧风险。
+- 渲染层 `whale/skinRenderer.ts`:新增截图层（SVG `<image>` 组 + 随主体轮廓每帧更新的 clipPath,夹在嘴部暗色填充与眼睛之间）;`whale/formStage.ts`:有快照时外壳直接不透明待命（无淡入）,融化走同一 covered 时序;快照解码失败原地重建普通端点退回兜底;反向时外壳（含快照）120ms 淡出。
+- 主进程 `index.ts`:开发期调试钩子固化为常驻（`!app.isPackaged` 守卫,env 不设则零行为）。
+
+### 验证结果
+
+- typecheck 三工程通过;Vitest **266/266**（新增 6 例:windowFromPanel 与 panelFromWindow 往返、shotSkin 整窗轮廓/装饰塌缩/bodyOpacity、融化中 bodyOpacity=1-ink 且终点姿态不变、截图路径 prepare 携带 shot+covered 时序+落定 repaint、捕获失败保持兜底时序、取消后迟 resolve 不误发 prepare）。
+- dev 实测（隔离 userData + CDP,全屏 20fps 连拍 + 帧差分析）:收起换形瞬间面板区域帧差 **0.00**（像素级无缝）,等待期 0.00~0.43,融化期 7.7~20.7 渐变——无任何"整块 UI 被蓝色矩形盖住"的帧;融化中途鲸鱼页面截图可见快照 UI 随卡片一起收缩;收起落定后末帧无孤立蓝色竖线;收起中途反向（融化 ~200ms 时展开回去）落回悬浮窗;260ms/200ms 间隔三连切换状态正确。
+- 修复同时回归原有成功路径（展开方向交接/兜底覆盖路径单测照常）、已知失败场景（捕获失败→兜底,单测覆盖）、边界条件（面板贴屏幕右缘实测、负坐标副屏由既有 relocateScene 单测覆盖、收起后鲸鱼继续游动带尾迹）。
+- 验证环境用后即删:dev 实例进程清零,连拍帧/脚本/隔离 userData 目录全数删除。
+
+### 遗留问题与验证边界
+
+- 快照是冻结画面:换形等待+融化期间（约 1s）站点页面的动画/光标闪烁停留在快照状态,融化完成后由真实视图接管;聊天场景肉眼不可感知,视频播放中收起会有约 1s 画面冻结（可接受,记录为已知限制）。
+- 蓝线根因在 Chromium/DWM 对透明窗口边缘列的损伤追踪,`repaint()` 是落定后的一次性对冲;若极端场景仍复现,heal() 的 hide→show 是兜底手段（未接入常规路径,避免空帧风险）。
+- 反向收起时外壳淡出（120ms）期间有半透明外壳残影,为设计行为（外壳必须让位给真实 UI）;时长已压到最短。
+- 打包版 GUI 冒烟未做（单实例锁限制,同前几版遗留）。
+
+### 实际采用的资料
+
+- 无新增外部资料:快照替换外壳为本项目自研方案（Electron capturePage + SVG clipPath 变形）;「WebContentsView 不在宿主窗口 capturePage 内」由实测确认（截图内容区为空）,官方文档未明确记载。
+- 沿用 v0.9.x 的 DWM 显示过渡时序结论（coveredDelayMs/retireDelayMs 取值依据见 v0.9.1 条目）。
+
 ## v0.10.0（2026-09-22）
 
 新增两条：鲸鱼游动时的尾迹水流特效；余额小窗站点顺序调整。

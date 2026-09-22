@@ -1,4 +1,4 @@
-import { FORM_CONFIG, type Form, type FormCommand, type FormReport, type FormScene } from '@shared/formTransition'
+import { FORM_CONFIG, type FloatShot, type Form, type FormCommand, type FormReport, type FormScene } from '@shared/formTransition'
 import { petPoint, relocateScene } from '@shared/whaleSkin'
 import type { Rect } from '@shared/types'
 import { FLOAT_EXPANDED } from '@shared/floatLayout'
@@ -12,6 +12,10 @@ export interface FormHost {
   placePanel(at: { x: number; y: number }): Rect
   workarea(panel: Rect): Rect
   stage(area: Rect): void
+  /** 悬浮窗整窗快照(主页+站点视图);null = 捕获失败,收起退回覆盖淡入路径 */
+  captureFloat(): Promise<FloatShot | null>
+  /** 融化结束后强制整窗重绘:透明窗口上外壳抗锯齿边缘列可能残留在 DWM 合成面(蓝线) */
+  repaint(form: Form): void
 }
 type Phase = 'stable' | 'preparing' | 'animating' | 'handoff'
 
@@ -28,6 +32,8 @@ export class FormController {
   private captureSent = false
   private timer: ReturnType<typeof setTimeout> | undefined
   private retireTimer: ReturnType<typeof setTimeout> | undefined
+  private shot: FloatShot | null | undefined // undefined = 捕获进行中
+  private shotRequested = false
   constructor(private host: FormHost) {}
 
   toggle(): void { this.request(this.target === 'whale' ? 'float' : 'whale') }
@@ -55,6 +61,8 @@ export class FormController {
     if (this.current === 'whale') this.scene = undefined
     this.preparedScene = false
     this.captureSent = false
+    this.shot = undefined
+    this.shotRequested = false
     this.host.ensure('float')
     this.host.ensure('whale')
     this.watchdog()
@@ -75,6 +83,18 @@ export class FormController {
       const panel = this.host.panel(), workarea = this.host.workarea(panel)
       if (!this.scene) { this.recover(); return }
       this.scene = relocateScene(this.scene, panel, workarea)
+      if (this.shot === undefined) {
+        // 截图外壳:捕获完成才发 prepare(渲染层要先把快照画进外壳再换形)
+        if (!this.shotRequested) {
+          this.shotRequested = true
+          void this.host.captureFloat().then(shot => {
+            if (this.phase !== 'preparing' || this.shot !== undefined) return
+            this.shot = shot
+            this.sendPreparation()
+          })
+        }
+        return
+      }
       this.sendPreparation()
     }
   }
@@ -88,8 +108,10 @@ export class FormController {
       this.sendPreparation()
     } else if (report.type === 'prepared' && sender === 'whale' && this.phase === 'preparing' && this.preparedScene) {
       this.host.show('whale')
-      // 收起方向(current=float):外壳需先在可见的悬浮窗上方淡入盖满,此刻不能隐藏悬浮窗,
-      // 否则真实 UI 一帧内被空白外壳替换(闪烁);盖满后鲸鱼上报 covered 再隐藏。
+      // 两条收起路径(截图外壳/覆盖淡入兜底)都等鲸鱼上报 covered 再隐藏悬浮窗:
+      // 鲸鱼窗口 re-show 的系统级淡入(~200ms)期间整窗半透明,过早隐藏悬浮窗会让
+      // 半透明卡片透出桌面(先暗后亮的闪烁)。截图外壳此期间与真实 UI 逐像素一致,
+      // 等待不可感知;过渡走完悬浮窗被隐藏时,用户看到的仍是"UI 原样",随后才融化。
       // 展开方向(current=whale):悬浮窗本就隐藏,立即隐藏是无害兜底。
       if (this.current !== 'float') this.host.hide('float')
       this.phase = 'animating'
@@ -110,7 +132,7 @@ export class FormController {
     if (!this.scene) return
     this.preparedScene = true
     this.host.stage(this.scene.workarea)
-    this.host.send('whale', { type: 'prepare', id: this.id, scene: this.scene, from: this.current })
+    this.host.send('whale', { type: 'prepare', id: this.id, scene: this.scene, from: this.current, shot: this.shot ?? undefined })
   }
   private play(): void {
     this.host.send('whale', { type: 'play', id: this.id, revision: this.revision, target: this.target })
@@ -135,6 +157,10 @@ export class FormController {
       this.host.hide('float')
     }
     this.host.show(form)
+    // 收起落定后强制鲸鱼窗口整窗重绘一次:外壳圆角矩形贴着窗口边缘,其抗锯齿边缘列
+    // 可能残留在 DWM 合成面上(桌宠形态出现 1px 蓝色竖线);此刻窗口已稳定可见,
+    // 重绘只替换合成面内容,无 show 时空帧闪烁的风险。
+    if (form === 'whale') this.host.repaint('whale')
   }
   destroy(): void { clearTimeout(this.timer); clearTimeout(this.retireTimer); this.id++ }
   /** Fail open to a ready form, invalidate old reports, and retain a visible source while rebooting. */

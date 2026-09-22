@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { app, Menu, globalShortcut, powerMonitor, screen } from 'electron'
 import { IPC } from '@shared/ipc'
+import { FORM_CONFIG } from '@shared/formTransition'
 import { formatDirection, resolveDirection } from '@shared/translate'
 import type { TranslatePopupState } from '@shared/translate'
 import { FormController } from './formController'
@@ -23,6 +24,17 @@ import { BillDb } from './balance/billdb'
 import { BalanceNotifier } from './balance/notify'
 import { BalanceWindowController } from './balance/window'
 import { BillingWindowController } from './balance/billing-window'
+
+// 开发期调试钩子(仅 !app.isPackaged 生效):
+// - CHATDECK_USERDATA=<dir> 重定向 userData,隔离出第二个实例(绕开单实例锁/不碰真实配置),
+//   供 CDP 自动化验证使用;
+// - CHATDECK_CDP=<port> 开 remote-debugging-port,供按目标(Page)截图/求值。
+if (!app.isPackaged) {
+  const dir = process.env.CHATDECK_USERDATA
+  if (dir) app.setPath('userData', dir)
+  const cdp = Number(process.env.CHATDECK_CDP)
+  if (Number.isFinite(cdp) && cdp > 0) app.commandLine.appendSwitch('remote-debugging-port', String(cdp))
+}
 
 const stores = {
   providers: new ProviderStore(),
@@ -73,7 +85,18 @@ const forms = new FormController({
   panel: () => floatWin.getPanelBounds(),
   placePanel: point => floatWin.prepareAt(point),
   workarea: panel => screen.getDisplayMatching(panel).workArea,
-  stage: area => whaleWin.setWorkarea(area)
+  stage: area => whaleWin.setWorkarea(area),
+  // 收起换形的整窗快照:主页玻璃壳由悬浮窗页面捕获,站点 WebContentsView 是独立合成面,
+  // 必须按布局矩形逐视图捕获后在鲸鱼渲染层叠加;任一环节失败返回 null 走覆盖淡入兜底
+  captureFloat: async () => {
+    const base = await floatWin.captureWindow(FORM_CONFIG.captureTimeoutMs)
+    if (!base) return null
+    const overlays = await floatViews.captureViews(FORM_CONFIG.captureTimeoutMs)
+    return { base, overlays }
+  },
+  repaint: form => {
+    if (form === 'whale') whaleWin.repaint()
+  }
 })
 
 const gotLock = app.requestSingleInstanceLock()

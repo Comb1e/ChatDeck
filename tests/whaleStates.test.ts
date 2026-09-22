@@ -4,7 +4,7 @@
  * 编排过渡不跳变、按压取消不重置形状、泳路完成与取消、形变有界、
  * 水线同步清除、短弧旋转恢复。FX 粒子以 mock 替身注入。
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 
 vi.mock('../src/renderer/src/whale/particles', () => ({
   FX: {
@@ -14,6 +14,8 @@ vi.mock('../src/renderer/src/whale/particles', () => ({
     ripple: vi.fn(),
     surface: vi.fn(),
     zzz: vi.fn(),
+    wake: vi.fn(),
+    streak: vi.fn(),
     init: vi.fn(),
     resize: vi.fn(),
     setOrigin: vi.fn(),
@@ -27,6 +29,7 @@ vi.mock('../src/renderer/src/whale/particles', () => ({
 
 import { App } from '../src/renderer/src/whale/context'
 import { FSM, FrameLoops } from '../src/renderer/src/whale/fsm'
+import { FX } from '../src/renderer/src/whale/particles'
 import { InputSession, shortAngle } from '../src/renderer/src/whale/runtime'
 import { States } from '../src/renderer/src/whale/states'
 import { Tween } from '../src/renderer/src/whale/tween'
@@ -263,6 +266,28 @@ describe('whale 行为状态机(移植版)', () => {
       expect(endpoints[i].y).toBe(endpoints[i % 2].y)
     }
   }, 120_000)
+
+  it('游动时尾鳍后方冒水流:气泡被航向反方向的水流带走,并按节奏夹水流线', async () => {
+    const f = fixture()
+    Object.assign(Whale.pose, { x: 600, y: 500, flip: 1 })
+    f.fsm.to('swim')
+    await flush()
+    for (let i = 0; i < 240 * 20 && f.fsm.current; i++) await step(1000 / 240)
+    const wake = (FX as unknown as { wake: Mock }).wake
+    const streak = (FX as unknown as { streak: Mock }).streak
+    expect(wake.mock.calls.length).toBeGreaterThan(5)
+    const limit = WHALE_CONFIG.particles.trail.driftMax + WHALE_CONFIG.particles.trail.jitter + WHALE_CONFIG.particles.trail.riseMax
+    for (const [x, y, vx, vy] of wake.mock.calls as [number, number, number, number][]) {
+      // 泳路 x 单调向右(random=0.42 固定):漂移项必然把气泡向左带
+      expect(vx).toBeLessThan(0)
+      expect(Math.hypot(vx, vy)).toBeLessThan(limit)
+      expect(x).toBeGreaterThan(0)
+      expect(y).toBeGreaterThan(0)
+      expect(y).toBeLessThan(720)
+    }
+    expect(streak.mock.calls.length).toBeGreaterThan(2)
+    expect(errors).toEqual([])
+  }, 30_000)
 
   it('表现形变有界、命中测试共享几何并会收敛', async () => {
     for (const flip of [-1, 1]) {

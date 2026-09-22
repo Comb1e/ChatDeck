@@ -9,6 +9,7 @@ import type { Behavior, StateParams, StateResult } from './fsm'
 import { Ctx } from './fsm'
 import { App } from './context'
 import { FX } from './particles'
+import { TRAIL_ANCHOR, TrailEmitter } from './trail'
 import { cruiseProgress, planSwim, shortAngle, DragSpring } from './runtime'
 import { Tween } from './tween'
 import { Whale } from './whale'
@@ -136,6 +137,8 @@ export const States: Record<string, Behavior> = {
       const dur = (route.path.length / (cfg().whale.swimSpeed * route.speed)) * 1000 + a.swimRampMs
       const ramp = Math.min(0.5, a.swimRampMs / dur)
       const point = { x: 0, y: 0, dx: 0, dy: 0 }
+      // 游动尾迹(水流):尾鳍锚点按固定弧长间距冒气泡/水流线,随路径结束自然停止
+      const trail = new TrailEmitter(cfg().particles.trail, Math.random)
 
       await ctx.animate({
         duration: dur,
@@ -149,6 +152,12 @@ export const States: Record<string, Behavior> = {
           Whale.pose.rot =
             clamp((Math.atan2(point.dy, Math.abs(point.dx)) * 180) / Math.PI, -c.tiltLimit, c.tiltLimit) *
             envelope
+          // localToWorld 用上一合成帧的姿态(1 帧滞后,对漂散的尾迹不可见)
+          const tail = Whale.localToWorld(TRAIL_ANCHOR.x, TRAIL_ANCHOR.y)
+          for (const s of trail.advance(tail.x, tail.y)) {
+            if (s.kind === 'wake') FX.wake(s.x, s.y, s.vx, s.vy)
+            else FX.streak(s.x, s.y, s.vx, s.vy)
+          }
         }
       })
       ctx.check()

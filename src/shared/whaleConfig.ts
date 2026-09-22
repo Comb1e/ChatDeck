@@ -50,6 +50,25 @@ export interface WhaleConfig {
   particles: {
     splashCount: number
     surfaceCount: number
+    /** 游动尾迹(水流):沿尾迹路径按固定间距布点 */
+    trail: {
+      /** 相邻两次发射的间距(像素) */
+      spacing: number
+      /** 气泡被水流向后带走的速度区间(px/s,取航向反方向) */
+      driftMin: number
+      driftMax: number
+      /** 垂直于航向的随机抖动幅度(px/s) */
+      jitter: number
+      /** 气泡上浮速度区间(px/s,向上) */
+      riseMin: number
+      riseMax: number
+      /** 水流拖阻时间常数(ms):指数衰减,尾迹很快被"水"停住 */
+      tauMs: number
+      /** 每 N 个气泡夹一条水流线 */
+      streakEvery: number
+      /** 单帧尾鳍位移超过此值视为传送(形态交接/重定位),直接重置尾迹不喷点 */
+      maxStep: number
+    }
   }
   gaze: {
     pupilRange: number
@@ -164,7 +183,18 @@ export const WHALE_CONFIG: WhaleConfig = {
   },
   particles: {
     splashCount: 22,
-    surfaceCount: 16
+    surfaceCount: 16,
+    trail: {
+      spacing: 26,
+      driftMin: 26,
+      driftMax: 60,
+      jitter: 16,
+      riseMin: 6,
+      riseMax: 20,
+      tauMs: 620,
+      streakEvery: 2,
+      maxStep: 140
+    }
   },
   gaze: {
     pupilRange: 2.8,

@@ -7,8 +7,9 @@
  * - 每粒子直接设 globalAlpha(无 save/restore),zzz 字体串按字号缓存。
  */
 import { WHALE_CONFIG } from '@shared/whaleConfig'
+import { dragDisplacement } from './trail'
 
-type ParticleType = 'drop' | 'ripple' | 'bubble' | 'zzz' | 'heart'
+type ParticleType = 'drop' | 'ripple' | 'bubble' | 'zzz' | 'heart' | 'wake' | 'streak'
 
 interface Particle {
   type: ParticleType
@@ -215,6 +216,32 @@ function hearts(x: number, y: number): void {
   }
 }
 
+/** 游动尾迹气泡:被水流向后带 + 缓慢上浮,指数拖阻很快停住(TrailEmitter 给初速) */
+function spawnWake(x: number, y: number, vx: number, vy: number): void {
+  spawn({
+    type: 'wake',
+    x,
+    y,
+    vx,
+    vy,
+    size: 2.2 + Math.random() * 2.6,
+    ttl: 900 + Math.random() * 700
+  })
+}
+
+/** 水流线:沿航向的短流线,快速淡出(size = 线长) */
+function spawnStreak(x: number, y: number, vx: number, vy: number): void {
+  spawn({
+    type: 'streak',
+    x,
+    y,
+    vx,
+    vy,
+    size: 9 + Math.random() * 11,
+    ttl: 420 + Math.random() * 180
+  })
+}
+
 function update(dt: number): void {
   let w = 0 // 原地压缩:存活前移,死亡归还对象池
   for (let i = 0; i < parts.length; i++) {
@@ -238,6 +265,12 @@ function update(dt: number): void {
       } else if (p.type === 'zzz') {
         p.y = p.y0 + p.vy0 * s
         p.x = p.x0 + p.vx0 * s + 14 * 0.26 * (Math.cos(p.wob) - Math.cos(elapsed / 260 + p.wob))
+      } else if (p.type === 'wake' || p.type === 'streak') {
+        // 指数拖阻(位移解析式):水的阻尼让尾迹小幅漂散后停住,不抛物线飞走
+        const tau = WHALE_CONFIG.particles.trail.tauMs / 1000
+        const f = dragDisplacement(1, tau, s)
+        p.x = p.x0 + p.vx0 * f
+        p.y = p.y0 + p.vy0 * f
       }
     }
     parts[w++] = p
@@ -310,6 +343,29 @@ function render(): void {
       ctx2d.fillStyle = '#ff8fb0'
       drawHeart(ctx2d, wx, wy, p.size)
       ctx2d.fill()
+    } else if (p.type === 'wake') {
+      // 尾迹气泡环:短淡入 + 缓慢淡出,半径缓增
+      const r = p.size * (1 + k * 0.8)
+      ctx2d.globalAlpha = (k < 0.25 ? k / 0.25 : 1 - (k - 0.25) / 0.75) * 0.68 * ef
+      ctx2d.strokeStyle = 'rgba(205,228,255,0.9)'
+      ctx2d.lineWidth = 1.4
+      ctx2d.beginPath()
+      ctx2d.arc(wx, wy, r, 0, Math.PI * 2)
+      ctx2d.stroke()
+    } else if (p.type === 'streak') {
+      // 水流线:沿漂移方向(=航向反方向),线长随寿命收缩
+      const len = p.size * (1 - k * 0.7)
+      const sp = Math.hypot(p.vx0, p.vy0) || 1
+      const ux = p.vx0 / sp,
+        uy = p.vy0 / sp
+      ctx2d.globalAlpha = (1 - k) * 0.55 * ef
+      ctx2d.strokeStyle = 'rgba(160,195,255,0.95)'
+      ctx2d.lineWidth = 1.6
+      ctx2d.lineCap = 'round'
+      ctx2d.beginPath()
+      ctx2d.moveTo(wx - ux * len * 0.5, wy - uy * len * 0.5)
+      ctx2d.lineTo(wx + ux * len * 0.5, wy + uy * len * 0.5)
+      ctx2d.stroke()
     }
   }
   dirty = true
@@ -340,6 +396,8 @@ export const FX = {
   bubble,
   zzz,
   hearts,
+  wake: spawnWake,
+  streak: spawnStreak,
   setWake: (fn: () => void): void => {
     wake = fn
   },

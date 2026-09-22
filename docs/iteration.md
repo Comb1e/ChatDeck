@@ -25,10 +25,11 @@
 - `npm run typecheck` 三工程通过，Vitest **239/239**（新增 billDb 聚合对照/优先级/持久化、volcbill 签名独立重推导/参数表/解析/错误分类/月窗跳过、账单报告 volcbill 参与等 20 例），`npm run build` 通过，主产物保持 `require("sql.js")` 外置。
 - 临时探针实调真实 AK/SK（用后即删）：确认原始字节派生链签名正确（hex 串变体 SignatureDoesNotMatch）、`GroupPeriod` 缺 `GroupTerm` 报 MissingParameter、行含 ExpenseDate/Currency/PayableAmount（2026-08 一笔 ¥9.90 ark_bd 账单）。
 - dev 实测（真数据）：余额胶囊火山方舟 65%（PCT 显示不变）、已用合计不含 PCT；账单窗口三粒度渲染正常，火山分区显示「计费中心」CNY 累计 ¥9.90（与探针一致），汇总 CNY 累计 = 本机计量 + 计费中心；站点筛选与按天视图（30 行逐日）确认可用。
+- `npm run dist` 打包成功，产出 `ChatDeck-0.9.0-Portable.exe` / `ChatDeck-Setup-0.9.0.exe`；解包校验 asar 内 `node_modules/sql.js` 完整（`sql-wasm.wasm` 与 node_modules 副本 sha256 逐字节一致，即 239 例测试实跑的那份 wasm），运行时依赖链路成立。
 
 ### 遗留问题与验证边界
 
-- `npm run dist` 打包与安装版冒烟未做（用户指示直接提交）；sql.js 在 asar 内读 wasm 的路径依赖 electron-builder 带上 node_modules/sql.js，首次打包时需确认。
+- 安装版/便携版 **GUI 冒烟未做**：本机已有安装版 0.8.1 在运行，单实例锁会让新实例启动即退出（并唤起旧实例），故只做了打包产物与依赖完整性的程序化校验。安装 0.9.0 前需先退出运行中的实例。
 - 计费中心分页循环为防御性（GroupPeriod=1 聚合后每月 ≤31 行，单页 300 上限实际必单页取完），未做多页实测。
 - 账单数据仅供对账参考：火山账单次月 2 日才出全，本月数字偏低属正常；不做产品/实例维度下钻与导出。
 

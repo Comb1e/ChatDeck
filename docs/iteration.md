@@ -1,5 +1,54 @@
 # 迭代记录
 
+## v0.10.3（2026-09-23）
+
+修复（用户反馈）：①「从悬浮窗到桌宠的收回有延迟，按下收回按钮后会停一小段时间才开始收回」；②「拖动鲸鱼时触发 ssl_client_socket_impl handshake failed（SSL error code 1, net_error -100）」；③ 过程性请求：把逐帧截图验证固化成仓库脚本，并沿用既有的鲸鱼钉住模式（`CHATDECK_WHALE_PINNED=1`）做可复现验证。
+
+### 收起延迟：根因与修复
+
+主进程插桩实测「按下收起按钮 → 融化开始」全程 385.9ms：捕获快照 27.8ms（7%）+ prepare 往返（解码+2 rAF）13.9ms（4%）+ **covered 冻结等待 344.2ms（89%）**。该 340ms 等待（`coveredDelayMs`）当初是给「鲸鱼窗口 re-show 的 DWM 淡入（~200ms）」留的余量；v0.10.2 改 never-hide 后鲸鱼窗口在悬浮窗形态期间从不隐藏，`show('whale')` 只是 moveTop，这段等待在截图外壳路径上已成纯死等。
+
+修复（按路径区分等待，兜底路径不动）：
+
+- `shared/formTransition.ts` 新增 `coveredShotDelayMs: 48`：截图外壳与真实 UI 逐像素一致，play 后只需保证绘制帧提交合成器（DWM 锁存）即可隐藏悬浮窗，2~3 个垂直同步余量。`coveredDelayMs: 340` 保留给覆盖淡入兜底路径（必须等 140ms `coverMs` 淡入盖满才能隐藏悬浮窗），注释同步改写（re-show 理由已不存在）。
+- `whale/formStage.ts`：play 处理器按 `crossfade`（兜底）选 340ms、截图路径选 48ms；等待期时钟仍冻结、covered 前重新锚定（原机制不变）。
+- `main/index.ts` `captureFloat`：主页与站点视图**并行**捕获（原为主页→视图串行）。
+- 新增不变量单测：`coveredDelayMs ≥ coverMs`（兜底安全）且 `coveredShotDelayMs < coveredDelayMs`。
+
+复测：按下按钮 → 融化开始 **88.4ms**（快 4.4 倍），其中捕获 29ms、prepare 8.8ms、covered 余量 50.6ms。
+
+### 拖鲸鱼触发 SSL 握手失败：排查结论与归因日志
+
+CDP Network 遥测实证（netwatch 监听全部页面目标，先注入已知 https 请求验证 harness 有效性）：空闲 + 3 次合成拖拽共 30s 窗口内**零**网络请求——拖拽（held/dragged 状态机 + 光标轮询 IPC）不发起任何网络请求。`ssl_client_socket_impl.cc handshake failed`（net_error -100 = 连接在 TLS 握手期被对端关闭，SSL error code 1 = 通用 SSL_ERROR_SSL）只可能来自站点 WebContentsView 页面自身的请求，是代理/中间盒/CDN 重置等环境因素，与拖拽的时间相关性纯属巧合，应用侧无法也不应重试页面内部流量。
+
+应用侧改进：站点分区 session 挂 `webRequest.onErrorOccurred`（`viewManager.attachNetErrorLog`，每分区一次，跳过 `net::ERR_ABORTED` 噪音），失败请求以 `[net] <resourceType> <error> <url>` 输出——Chromium 原生那行裸错误没有 URL，无法定位来源；下次再出现即可归因到具体站点/代理。GUI 验证：注入必然失败请求，输出 `[net] xhr net::ERR_UNSAFE_PORT https://127.0.0.1:1/x`。
+
+### 验证工具入库
+
+- `scripts/grab-frames.ps1`：屏幕区域连拍（CopyFromScreen，bmp/png，可调间隔），帧坐标=屏幕坐标-抓取原点。
+- `scripts/analyze-frames.mjs`：逐帧亮度曲线 + 突陷（V 型离群）帧检测 + 可选白屏像素占比，支持 24/32 位 BMP 与 PNG（pngjs）。
+- 用法与理由（透明窗口不吃 CDP screencast，截图验证必须抓屏幕）已写入 architecture.md 调试段。
+
+### 本版改进清单
+
+- `shared/formTransition.ts`：`coveredShotDelayMs`；`coveredDelayMs` 注释改写。
+- `whale/formStage.ts`：covered 等待按路径选择。
+- `main/index.ts`：`captureFloat` 并行捕获。
+- `main/viewManager.ts`：`attachNetErrorLog`；`tests/viewManager.test.ts` mock 补 `webRequest.onErrorOccurred`。
+- `scripts/grab-frames.ps1`、`scripts/analyze-frames.mjs`（新增）。
+
+### 验证结果
+
+- typecheck 三工程通过；Vitest **266/266**（新增 covered 延迟不变量；viewManager 6 例因 mock 缺 webRequest 一度失败，补 mock 后恢复）。
+- dev 实测（`CHATDECK_WHALE_PINNED=1` 钉住 + 隔离 userData，21fps 连拍 + 逐帧目检）：首收（f0011 完整 UI → f0012 即入融化 → 无透桌面）、二收（同净）、融化中 166ms 反向（UI 完整恢复）、兜底路径（临时强制 `captureFloat` 返回 null 触发，covered 实际 349ms≈340 配置，淡入边界无透桌面）全部通过。
+- 修复后收起全程 76.9~88.4ms（多轮），shot=yes 正常路径；临时插桩/强制兜底补丁/1ms 超时全部还原，git diff 核实。
+
+### 遗留问题与验证边界
+
+- 48ms 提交余量按 2~3 垂直同步取值：GPU 极端卡顿下理论上仍有单帧透明窗口（DWM 无锁存确认 API，属平台限制）；连拍目检未复现，若用户环境再现收起闪烁优先上调该值。
+- SSL 握手失败本体是环境/站点侧问题，`[net]` 日志只解决归因；若日志显示 `ip` 指向本机代理可据此排查代理软件。
+- 打包版冒烟仍未做（v0.10.2 起遗留）。
+
 ## v0.10.2（2026-09-23）
 
 修复（用户反馈）：①「从第二次开始悬浮窗依旧有之前的闪烁问题」（收起方向）；②收起确认修复后「从桌宠到悬浮窗仍有闪烁」，用户判断原因在网页加载，并提议「先加载再播放动画，争取在动画播放完之前加载完毕」——本版按此实现展开预热。

@@ -27,7 +27,7 @@
 ```bash
 npm install
 npm run dev        # 开发运行
-npm test           # 单元测试（265 个）
+npm test           # 单元测试（266 个）
 npm run typecheck  # 类型检查
 npm run build      # 构建产物（out/）
 npm start          # 运行构建产物

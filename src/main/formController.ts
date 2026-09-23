@@ -114,10 +114,9 @@ export class FormController {
       if (this.current === 'whale') this.host.prewakeFloat()
       this.host.show('whale')
       // 两条收起路径(截图外壳/覆盖淡入兜底)都等鲸鱼上报 covered 再隐藏悬浮窗:
-      // 鲸鱼窗口 re-show 的系统级淡入(~200ms)期间整窗半透明,过早隐藏悬浮窗会让
-      // 半透明卡片透出桌面(先暗后亮的闪烁)。截图外壳此期间与真实 UI 逐像素一致,
-      // 等待不可感知;过渡走完悬浮窗被隐藏时,用户看到的仍是"UI 原样",随后才融化。
-      // 展开方向(current=whale):悬浮窗本就隐藏,立即隐藏是无害兜底。
+      // 鲸鱼渲染层冻结时钟、等外壳确实盖住 UI 后才上报——截图外壳与真实 UI 逐像素一致,
+      // 只留合成器提交余量(coveredShotDelayMs);兜底外壳要等淡入盖满(coveredDelayMs ≥ coverMs + 余量)。
+      // 外壳盖住期间悬浮窗隐藏不可感知。展开方向(current=whale):悬浮窗本就隐藏,立即隐藏是无害兜底。
       if (this.current !== 'float') this.host.hide('float')
       this.phase = 'animating'
       this.play()

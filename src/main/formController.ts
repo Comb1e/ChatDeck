@@ -14,6 +14,8 @@ export interface FormHost {
   stage(area: Rect): void
   /** 悬浮窗整窗快照(主页+站点视图);null = 捕获失败,收起退回覆盖淡入路径 */
   captureFloat(): Promise<FloatShot | null>
+  /** 展开预热:换形动画开始时提前创建悬浮窗并重建/加载站点视图(加载藏在动画之后) */
+  prewakeFloat(): void
   /** 融化结束后强制整窗重绘:透明窗口上外壳抗锯齿边缘列可能残留在 DWM 合成面(蓝线) */
   repaint(form: Form): void
 }
@@ -107,6 +109,9 @@ export class FormController {
       this.scene = { pet: report.pet, panel, workarea: this.host.workarea(panel) }
       this.sendPreparation()
     } else if (report.type === 'prepared' && sender === 'whale' && this.phase === 'preparing' && this.preparedScene) {
+      // 展开方向:动画开始前预热悬浮窗(确保窗口已建+站点视图重建/加载),
+      // 加载过程藏在鲸鱼外壳与 retire 延迟之后;收起方向悬浮窗本就存在,无需预热。
+      if (this.current === 'whale') this.host.prewakeFloat()
       this.host.show('whale')
       // 两条收起路径(截图外壳/覆盖淡入兜底)都等鲸鱼上报 covered 再隐藏悬浮窗:
       // 鲸鱼窗口 re-show 的系统级淡入(~200ms)期间整窗半透明,过早隐藏悬浮窗会让
@@ -144,13 +149,15 @@ export class FormController {
     this.current = this.target = form
     if (form === 'float') {
       // 悬浮窗显示时会播 Windows DWM 显示过渡(~200ms 淡入),而它此刻在鲸鱼窗口(外壳)之下,
-      // 外壳若立刻消失,半透明的过渡中间态直接暴露(整窗幽灵闪烁)。等过渡走完再清空并隐藏鲸鱼。
+      // 外壳若立刻消失,半透明的过渡中间态直接暴露(整窗幽灵闪烁)。等过渡走完再清空鲸鱼页面。
       clearTimeout(this.retireTimer)
       this.retireTimer = setTimeout(() => {
         this.retireTimer = undefined
         if (this.phase !== 'stable' || this.current !== 'float') return
         this.host.send('whale', { type: 'settle', id: this.id, form, scene: this.scene })
-        this.host.hide('whale')
+        // 不隐藏鲸鱼窗口:隐藏后的 re-show 会让 DWM 合成面在数百毫秒内不呈现内容
+        // (显示过渡+表面重建),期间悬浮窗一旦隐藏,屏幕上就是空洞=收起闪烁。
+        // 页面 settle 后本窗口已渲染为全透明,保持可见即可;下次收起无需 re-show。
       }, FORM_CONFIG.retireDelayMs)
     } else {
       this.host.send('whale', { type: 'settle', id: this.id, form, scene: this.scene })

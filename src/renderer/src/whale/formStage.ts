@@ -49,15 +49,15 @@ export class FormStage {
       this.crossfade = false
       this.hasShots = false
       this.skin.setShots(null)
-      this.sample = createMorph(command.scene, !!command.shot)
+      this.sample = createMorph(command.scene)
       this.clock = new FormTimeline(command.from, performance.now())
       this.skin.root.setAttribute('transform', `translate(${-command.scene.workarea.x} ${-command.scene.workarea.y})`)
       this.skin.draw(this.sample(this.clock.progress))
       this.skin.root.dataset.progress = String(this.clock.progress)
       this.skin.show(true)
-      // 收起方向(from=float):鲸鱼窗口将显示在真实悬浮窗正上方。
-      // 有整窗快照时外壳即为真实 UI 的像素(主体填充透明,装饰塌缩),换形瞬间无需淡入;
-      // 无快照(捕获失败兜底)时外壳先以透明待命,play 时淡入盖住 UI,构成 crossfade。
+      // 收起方向(from=float):鲸鱼窗口将显示在真实悬浮窗正上方。外壳=面板玻璃壳,与悬浮窗
+      // 页面自己的鲸鱼框层同一渲染;有整窗快照时真实 UI 的像素铺在外壳之上(ink=1),换形
+      // 瞬间逐像素一致,无需淡入;无快照(捕获失败兜底)时外壳以透明待命,play 时淡入盖住 UI。
       this.crossfade = command.from === 'float' && !command.shot
       if (this.crossfade) {
         this.skin.root.style.transition = 'none'
@@ -65,17 +65,16 @@ export class FormStage {
       }
       this.hooks.cover()
       const id = this.id
+      // 快照解码失败:退回覆盖淡入路径;外壳几何与普通形态一致,无需重建
       const painted = command.shot
         ? this.applyShots(command.shot).then(ok => {
-            if (!ok && id === this.id) {
-              // 快照解码失败:重建普通端点退回覆盖淡入路径,避免出现全透明外壳
-              this.sample = createMorph(command.scene)
+            if (!ok && id === this.id && this.clock) {
               this.crossfade = command.from === 'float'
               if (this.crossfade) {
                 this.skin.root.style.transition = 'none'
                 this.skin.root.style.opacity = '0'
               }
-              this.skin.draw(this.sample(this.clock!.progress))
+              this.skin.draw(this.sample!(this.clock.progress))
             }
           })
         : Promise.resolve()

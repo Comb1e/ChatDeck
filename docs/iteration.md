@@ -1,5 +1,51 @@
 # 迭代记录
 
+## v0.10.2（2026-09-23）
+
+修复（用户反馈）：①「从第二次开始悬浮窗依旧有之前的闪烁问题」（收起方向）；②收起确认修复后「从桌宠到悬浮窗仍有闪烁」，用户判断原因在网页加载，并提议「先加载再播放动画，争取在动画播放完之前加载完毕」——本版按此实现展开预热。
+
+### 上版问题与方法根因
+
+排查期先实证了两个「假根因」：其一，第一轮修复后用户报「修复失败」，实为 dev 实例 HMR 未生效（electron-vite 对 shared 模块的热更不可靠，实例一直跑旧代码）叠加一处观察用 `coveredDelayMs=3000` 忘记还原——watchdog（2000ms）每次先触发 recover 强切目标形态，2s 冻结后瞬间变鲸鱼，观感即「依旧闪烁」（从 covered-armed 日志 `cd=3000` 发现）。教训入册：**改 shared 模块必须重启 dev 实例；临时时序参数用完立即还原**。
+
+收起方向（悬浮窗→鲸鱼）三层真实根因，全部修复后用户确认无闪烁：
+
+- **鲸鱼窗口 retire 隐藏后 re-show 的合成面滞后**：收起完成后隐藏鲸鱼窗口，下次收起 re-show 时 DWM 对该透明窗口的合成面要数百毫秒才恢复呈现内容——covered 隐藏悬浮窗后屏幕上就是这段空洞（v0.9.x 以来「第二次才闪」的直接原因：第一次收起前窗口从未 hide 过）。修复：悬浮窗形态期间鲸鱼窗口**保持可见不再隐藏**——settle 后其页面已渲染为全透明，保持可见零成本；下次收起无需 re-show。
+- **never-hide 引出的 z 序遮挡**：悬浮窗 show() 会把保持可见的鲸鱼窗口压到下面，而 `reveal()` 对已可见窗口提前 return，moveTop 从不执行——融化期间外壳在悬浮窗背后淡入形同未见，covered 后暴露「刚解除遮挡、合成面尚未提升」的约 250ms 空窗。修复：可见时补一次 `moveTop()` 再 return。
+- **融化几何第一帧退让**：融化曲线从第一帧就让出面板顶边、嘴部暗色填充提前淡出，内容区/顶带在内容仍可见时瞬间透出桌面。修复：**两段式融化**——阶段 A（growing 1→0.45）轮廓保持面板形状、快照内容在整块不透明蓝色面板内溶解（`bodyOpacity` 恒 1，`mouthFill` 撑满阶段 A）；阶段 B（0.45→0）轮廓整体收缩成鲸鱼、嘴部填充随之淡出还原镂空透底。`shotSkin`/`collapsed` 端点删除，`createMorph` 终点恒为 panelSkin。
+
+展开方向（鲸鱼→悬浮窗）根因：悬浮窗显示时才触发 remount()——被休眠策略销毁的站点视图此刻才重建+重载，用户看着页面加载。修复按用户提议实现**预热**：FormController 在展开的 prepared 时刻（动画开始）调用新增的 `host.prewakeFloat()`（= `floatWin.ensureCreated()` + `floatViews.prewake()`，后者即 remount()），站点视图在动画 700ms + handoff + retire 300ms 期间提前加载。`remount()` 对活跃视图是幂等重挂载（不重载），仅重建被休眠销毁的视图，预热无重复加载副作用。
+
+### 本版改进
+
+- `shared/whaleSkin.ts`：`SkinFrame` 增加 `mouthFill`（嘴部暗色填充：面板=内容区底色，鲸鱼=镂空透底）；融化改两段式；删除 `shotSkin`/`collapsed`。
+- `shared/formTransition.ts`：删除无引用的 `windowRadius`；durationMs/coveredDelayMs/readyTimeoutMs 维持 700/340/2000。
+- `main/formController.ts`：`FormHost` 增加 `prewakeFloat`；prepared 分支按方向预热；finish('float') 的 retire 不再隐藏鲸鱼窗口。
+- `main/whaleWindow.ts` `reveal()`：已可见时 `moveTop()` 幂等置顶。
+- `main/viewManager.ts`：新增公开 `prewake()`（语义化包装 remount）。
+- `main/index.ts`：装配 `prewakeFloat`。
+- 渲染层 `whale/skinRenderer.ts`：嘴部填充改用 `frame.mouthFill`；`whale/formStage.ts`：createMorph 单参调用、快照失败兜底不再重建 morph。
+
+### 验证结果
+
+- typecheck 三工程通过；Vitest **265/265**（新增：prewakeFloat 在展开 prepared 时被调用、两段式融化 bodyOpacity 恒 1 与 mouthFill 曲线（阶段 A 恒 1、终点 0）、retire 后鲸鱼窗口保持可见）。
+- dev 实测（干净重启实例，30fps 连拍 + 像素分析）：
+  - 收起：covered-fired actual=343ms（340 配置 + 3ms 抖动），四轮 toggle 末态全部正确；用户目视确认收起无闪烁。
+  - 展开（最严苛路径：dev 实例长时间空闲、站点视图已被休眠清扫，展开即触发「休眠重建+预热」）：30fps 连拍 240 帧，过渡期面板内容区白屏像素占比全程 ≤0.4%，f114 鲸鱼长出面板轮廓 → f120 面板到位时站点内容已完整渲染 → 无白屏/无透桌面帧。
+  - 收起中反向（handoff 期）既有单测覆盖照常通过。
+- 临时插桩/测量脚本/连拍帧全部用后即删（cd-repro 目录整体删除并核实零残留）；dev electron 进程清零。
+
+### 遗留问题与验证边界
+
+- 慢站点风险仍在：预热只提供约 1s 的提前加载窗口，站点超过 1s 未加载完时揭示后仍会看到其自身加载过程（有站点 loading 指示点），属渐进增强而非硬保证。
+- CDP screencast 观测到的页面输出与 DOM 状态存在矛盾（cast 里只见宠物不见 morph，但 DOM/实拍/用户目视均确认 morph 正常渲染），判断为 screencast 对该透明窗口的采样时机/缩放假象，记录在案不影响交付。
+- 悬浮窗形态期间鲸鱼窗口常驻可见（全透明页面）：多一个常驻合成面，实测无视觉/输入影响；若未来发现资源影响可改为「显示前预热重建表面」方案。
+- 打包版 GUI 冒烟未做（单实例锁限制，同前几版遗留）。
+
+### 实际采用的资料
+
+- 无新增外部资料：预热为本项目自研（Electron WebContentsView 重建 + FormController prepared 时序内嵌）；DWM 合成面 re-show 滞后为实测结论（winvis/连拍帧差），官方文档未明确记载。
+
 ## v0.10.1（2026-09-22）
 
 修复（用户反馈）：①收起为桌宠后屏幕上残留一条 1px 蓝色竖线；②收起悬浮窗的闪烁仍未解决——现方案"先淡入一层蓝色外壳盖住 UI 再融化"观感即闪烁，要求去掉覆盖环节、UI 平滑收起。另将开发期 CDP 验证钩子（CHATDECK_USERDATA/CHATDECK_CDP,仅 `!app.isPackaged` 生效）固化为常驻调试入口。

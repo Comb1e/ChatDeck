@@ -96,6 +96,10 @@ const forms = new FormController({
   },
   repaint: form => {
     if (form === 'whale') whaleWin.repaint()
+  },
+  prewakeFloat: () => {
+    floatWin.ensureCreated()
+    floatViews.prewake()
   }
 })
 

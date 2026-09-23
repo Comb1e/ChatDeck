@@ -16,8 +16,6 @@ export const FORM_CONFIG = {
   retireDelayMs: 300,
   inset: { x: 24, y: 24 },
   radius: 18,
-  /** 截图外壳端点:与悬浮窗页面自身的玻璃圆角一致(--float-radius),像素级对齐换形瞬间 */
-  windowRadius: 16,
   /** 悬浮窗整窗截图(主页 + 站点视图)的单张捕获上限,超时按兜底路径处理 */
   captureTimeoutMs: 500,
   contentColor: '#131824',

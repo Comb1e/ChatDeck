@@ -51,7 +51,7 @@ export class SkinRenderer {
     body.setAttribute('d', pathOf(frame.body) + pathOf(frame.mouth))
     body.setAttribute('opacity', String(frame.bodyOpacity))
     mouth.setAttribute('d', pathOf(frame.mouth))
-    mouth.setAttribute('opacity', String(frame.ink))
+    mouth.setAttribute('opacity', String(frame.mouthFill))
     eye.setAttribute('d', pathOf(frame.eye))
     dot.setAttribute('d', pathOf(frame.dot))
     const blue = [77, 107, 254]

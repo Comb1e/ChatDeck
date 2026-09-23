@@ -261,6 +261,15 @@ export class ViewManager {
     if (this.lastLayout) this.setLayout(this.lastLayout)
   }
 
+  /**
+   * 展开预热:换形动画开始时(悬浮窗仍隐藏)按最近布局重建/挂载站点视图,
+   * 休眠销毁的视图此刻重建并开始加载,加载过程藏在鲸鱼外壳与 retire 延迟之后,
+   * 避免悬浮窗揭示后用户看着页面白屏加载(展开闪烁)。
+   */
+  prewake(): void {
+    this.remount()
+  }
+
   destroyAll(): void {
     for (const [, mv] of this.views) {
       try {

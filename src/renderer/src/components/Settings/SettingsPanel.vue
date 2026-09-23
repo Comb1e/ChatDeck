@@ -251,7 +251,7 @@ async function addProvider(): Promise<void> {
     <section>
       <h3 class="sec-title">关于</h3>
       <p class="about">
-        ChatDeck v0.10.1 · 国内大模型聚合工作台<br />
+        ChatDeck v0.10.2 · 国内大模型聚合工作台<br />
         桌面常驻小鲸鱼（悬浮窗压缩形态）：单击鲸鱼展开面板，鼠标悬浮它会开心跳。<br />
         余额监控小窗：托盘右键「余额监控」开关（站点与 Token 在窗口内管理）。<br />
         每个站点使用独立存储，登录数据仅保存在本机。<br />

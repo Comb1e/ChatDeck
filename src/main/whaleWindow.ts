@@ -149,13 +149,20 @@ export class WhaleWindowController {
 
   private reveal(): void {
     const win = this.getWindow()
-    if (!win || win.isVisible()) return
+    if (!win) return
     this.syncWorkarea()
     win.setAlwaysOnTop(true, 'floating')
     win.setVisibleOnAllWorkspaces(true)
+    // 悬浮窗形态期间本窗口保持可见(隐藏后 re-show 的 DWM 合成面要数百毫秒才恢复呈现,
+    // covered 隐藏悬浮窗时屏幕上就是空洞=收起闪烁),但悬浮窗 show() 会把它压到下面;
+    // 换形必须回到悬浮窗上方,否则快照被真实 UI 挡住,covered 后暴露的是刚解除遮挡、
+    // 合成面尚未提升的空窗期——同样是收起闪烁。可见时仅补一次置顶。
+    if (win.isVisible()) {
+      win.moveTop()
+      return
+    }
     // 全屏透明覆盖层不该激活:收起时悬浮窗正持有焦点(用户刚点过收起按钮),show() 的
     // 激活会抢走输入焦点;穿透/点击外壳靠 setIgnoreMouseEvents forward,不需要焦点。
-    // 但必须显式回到悬浮窗上方(showInactive 不改 z 序,外壳会在 UI 背后淡入,形同未见)。
     win.showInactive()
     win.moveTop()
     // 不 invalidate():丢弃首帧会让透明窗口在重绘期间闪透明空帧,见 floatWindow.show()

@@ -1,5 +1,5 @@
 import { ANCHOR, BODY_D, EYE_D, SWAY_PIVOT, TAIL_D, TAIL_PIVOT } from './whaleGeometry'
-import { FORM_CONFIG, smooth, type FormScene, type PetVisual } from './formTransition'
+import { FORM_CONFIG, clamp01, smooth, type FormScene, type PetVisual } from './formTransition'
 import { FLOAT_FRAME_PAD, FLOAT_HEADER_H, FLOAT_INSET, FLOAT_PROMPTBAR_H, FLOAT_WINDOW } from './floatLayout'
 import type { Rect } from './types'
 
@@ -7,8 +7,10 @@ export interface Point { x: number; y: number }
 export interface SkinFrame {
   body: Point[]; mouth: Point[]; tail: Point[]; eye: Point[]; dot: Point[]; cheek: Point[]
   ink: number; cheekOpacity: number; dotWhite: number
-  /** 蓝色主体填充的不透明度:截图外壳在换形瞬间主体透明(快照自身即真实 UI),融化中随 ink 反向浮现 */
+  /** 蓝色主体填充的不透明度:恒为 1——融化中快照必须与不透明主体交叉淡化,而非与桌面 */
   bodyOpacity: number
+  /** 嘴部暗色填充(面板=内容区底色,鲸鱼=镂空透底):收起阶段A保持 1,阶段B随轮廓收拢淡出 */
+  mouthFill: number
 }
 const N = FORM_CONFIG.contourSamples
 const mix = (a: number, b: number, t: number): number => a + (b - a) * t
@@ -125,7 +127,7 @@ export function petSkin(pet: PetVisual): SkinFrame {
   return { body: world(body), mouth: world(mouth), tail: world(tail.map(p => rotate(p, TAIL_PIVOT, pet.tailAngle))),
     eye: world(expressionEye(pet)), dot: world(pet.expression === 'shock' ? ellipse(90, 84, 2.8) : dot.map(p => pet.expression !== 'normal'
       ? { x: 90, y: 84 } : { x: p.x + pet.gx, y: 84 + (p.y - 84) * pet.blink + pet.gy })),
-    cheek: world(cheek), ink: 0, cheekOpacity: 0.28, dotWhite: pet.expression === 'shock' ? 0 : 1, bodyOpacity: 1 }
+    cheek: world(cheek), ink: 0, cheekOpacity: 0.28, dotWhite: pet.expression === 'shock' ? 0 : 1, bodyOpacity: 1, mouthFill: 0 }
 }
 export function panelSkin(panel: Rect): SkinFrame {
   return {
@@ -135,7 +137,7 @@ export function panelSkin(panel: Rect): SkinFrame {
     tail: tail.map(p => ({ x: panel.x - 22 + p.x * 0.62, y: panel.y - 24 + p.y * 0.62 })),
     eye: eye.map(p => ({ x: panel.x + 12 + (p.x - 74) * 0.65, y: panel.y + 8 + (p.y - 69) * 0.65 })),
     dot: dot.map(p => ({ x: panel.x + 12 + (p.x - 74) * 0.65, y: panel.y + 8 + (p.y - 69) * 0.65 })),
-    cheek: cheek.map(p => ({ x: panel.x + p.x, y: panel.y + p.y })), ink: 1, cheekOpacity: 0, dotWhite: 1, bodyOpacity: 1
+    cheek: cheek.map(p => ({ x: panel.x + p.x, y: panel.y + p.y })), ink: 1, cheekOpacity: 0, dotWhite: 1, bodyOpacity: 1, mouthFill: 1
   }
 }
 
@@ -144,43 +146,34 @@ export function windowFromPanel(panel: Rect): Rect {
   return { x: panel.x - FLOAT_INSET.x, y: panel.y - FLOAT_INSET.y, width: FLOAT_WINDOW.width, height: FLOAT_WINDOW.height }
 }
 
-function collapsed(at: Point): Point[] {
-  return Array.from({ length: N }, () => ({ ...at }))
-}
-
-/**
- * 截图外壳端点:主体=整窗圆角矩形(与页面玻璃圆角一致),快照图铺在其上;
- * 装饰性尾鳍/眼睛塌缩成点——真实 UI 的头部自带这些元素,突变即穿帮。
- */
-export function shotSkin(panel: Rect): SkinFrame {
-  const win = windowFromPanel(panel)
-  const corner = { x: win.x + 1, y: win.y + 1 }
-  return {
-    body: roundedRect(win, FORM_CONFIG.windowRadius),
-    mouth: roundedRect({ x: win.x + FLOAT_INSET.x + FLOAT_FRAME_PAD, y: win.y + FLOAT_INSET.y + FLOAT_HEADER_H,
-      width: FLOAT_WINDOW.width - FLOAT_INSET.x - FLOAT_FRAME_PAD * 2,
-      height: FLOAT_WINDOW.height - FLOAT_INSET.y - FLOAT_HEADER_H - FLOAT_PROMPTBAR_H - FLOAT_FRAME_PAD }, 2),
-    tail: collapsed(corner), eye: collapsed(corner), dot: collapsed(corner), cheek: collapsed(corner),
-    ink: 1, cheekOpacity: 0, dotWhite: 1, bodyOpacity: 0
-  }
-}
 const parts = ['body', 'mouth', 'tail', 'eye', 'dot', 'cheek'] as const
-export function createMorph(scene: FormScene, shotMode = false): (progress: number) => SkinFrame {
+/**
+ * 截图外壳与普通外壳共用同一端点(面板圆角矩形玻璃壳):收起时快照铺在外壳之上,
+ * 蓝色主体全程不透明垫底——融化中快照淡出是与不透明蓝鲸交叉淡化,而不是与桌面,
+ * 否则面板内容会在透明窗口上变成半透明幽灵(逐帧可见桌面穿透,即"第二次起闪烁")。
+ * 装饰尾鳍/眼睛沿用面板形态的真实位置:快照里同样的像素淡出后由外壳层无缝接管。
+ */
+export function createMorph(scene: FormScene): (progress: number) => SkinFrame {
   const start = petSkin(scene.pet), open = { ...start }
   open.body = body.map(p => petPoint({ x: 130 + (p.x - 130) * 1.07, y: 90 + (p.y - 90) * 1.11 }, scene.pet))
   open.mouth = align(start.mouth, ellipse(149, 104, 59, 47).map(p => petPoint(p, scene.pet)))
-  const end = shotMode ? shotSkin(scene.panel) : panelSkin(scene.panel)
+  const end = panelSkin(scene.panel)
   for (const part of parts) end[part] = align(open[part], end[part])
   return (progress) => {
     const ms = Math.max(0, Math.min(1, progress)) * FORM_CONFIG.durationMs
     const opening = smooth(ms / FORM_CONFIG.mouthMs)
     const growing = smooth((ms - FORM_CONFIG.mouthMs) / (FORM_CONFIG.durationMs - FORM_CONFIG.mouthMs))
+    // 两段式收起:阶段A(growing 1→0.45)轮廓保持面板形状,快照内容在整块不透明蓝色面板内
+    // 溶解;阶段B(0.45→0)轮廓整体收缩成鲸鱼,嘴部暗色填充随之淡出还原为镂空透底。
+    // 若轮廓从第一帧就退让,面板顶带会在内容仍可见时瞬间透出桌面,观感即"闪烁";
+    // 嘴部暗色填充同理必须撑满阶段A,否则内容区先于轮廓透出桌面。
+    const geo = smooth(clamp01((growing - 0.45) / 0.55))
+    const ink = smooth(clamp01((growing - 0.45) / 0.55))
     const result = {
-      ink: growing, cheekOpacity: 0.28 * (1 - growing), dotWhite: mix(start.dotWhite, 1, growing),
-      // 截图外壳:融化中蓝色主体与快照反向交叉淡入淡出,换形瞬间(p=1)主体完全透明
-      bodyOpacity: shotMode ? 1 - growing : 1
+      ink, cheekOpacity: 0.28 * (1 - geo), dotWhite: mix(start.dotWhite, 1, geo),
+      bodyOpacity: 1, mouthFill: smooth(clamp01(growing / 0.45))
     } as SkinFrame
-    for (const part of parts) result[part] = blend(blend(start[part], open[part], opening), end[part], growing)
+    for (const part of parts) result[part] = blend(blend(start[part], open[part], opening), end[part], geo)
     return result
   }
 }

@@ -42,7 +42,7 @@ vi.mock('electron', () => {
     setBounds(): void {}
     setBackgroundColor(): void {}
   }
-  const sessions = new Map<string, { setUserAgent(): void; setPermissionRequestHandler(): void }>()
+  const sessions = new Map<string, { setUserAgent(): void; setPermissionRequestHandler(): void; webRequest: { onErrorOccurred(): void } }>()
   return {
     app: { isPackaged: true },
     BrowserWindow: class {
@@ -76,7 +76,7 @@ vi.mock('electron', () => {
       fromPartition: (name: string) => {
         let s = sessions.get(name)
         if (!s) {
-          s = { setUserAgent() {}, setPermissionRequestHandler() {} }
+          s = { setUserAgent() {}, setPermissionRequestHandler() {}, webRequest: { onErrorOccurred() {} } }
           sessions.set(name, s)
         }
         return s

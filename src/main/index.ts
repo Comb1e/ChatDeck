@@ -87,11 +87,14 @@ const forms = new FormController({
   workarea: panel => screen.getDisplayMatching(panel).workArea,
   stage: area => whaleWin.setWorkarea(area),
   // 收起换形的整窗快照:主页玻璃壳由悬浮窗页面捕获,站点 WebContentsView 是独立合成面,
-  // 必须按布局矩形逐视图捕获后在鲸鱼渲染层叠加;任一环节失败返回 null 走覆盖淡入兜底
+  // 必须按布局矩形逐视图捕获后在鲸鱼渲染层叠加;任一环节失败返回 null 走覆盖淡入兜底。
+  // 主页与站点视图并行捕获,缩短按下收起到动画开始的延迟。
   captureFloat: async () => {
-    const base = await floatWin.captureWindow(FORM_CONFIG.captureTimeoutMs)
+    const [base, overlays] = await Promise.all([
+      floatWin.captureWindow(FORM_CONFIG.captureTimeoutMs),
+      floatViews.captureViews(FORM_CONFIG.captureTimeoutMs)
+    ])
     if (!base) return null
-    const overlays = await floatViews.captureViews(FORM_CONFIG.captureTimeoutMs)
     return { base, overlays }
   },
   repaint: form => {

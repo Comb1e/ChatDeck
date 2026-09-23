@@ -105,6 +105,9 @@ export class FormStage {
           this.skin.root.style.opacity = '1'
         }
         const id = this.id, clock = this.clock
+        // 截图外壳逐像素一致,只等合成器提交(coveredShotDelayMs);兜底淡入须等淡入走完
+        // (coveredDelayMs ≥ coverMs + 余量)。
+        const holdMs = this.crossfade ? FORM_CONFIG.coveredDelayMs : FORM_CONFIG.coveredShotDelayMs
         this.fadeTimer = setTimeout(() => {
           this.fadeTimer = undefined
           if (id !== this.id || !this.playing) return
@@ -112,7 +115,7 @@ export class FormStage {
           clock!.resync(performance.now())
           window.api.form.report({ type: 'covered', id })
           this.tick(performance.now())
-        }, FORM_CONFIG.coveredDelayMs)
+        }, holdMs)
         return
       }
       if ((this.crossfade || this.hasShots) && command.target === 'float') {

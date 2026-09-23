@@ -262,6 +262,21 @@ export class ViewManager {
   }
 
   /**
+   * 站点页自身请求的网络失败,Chromium 只在 stderr 打一行无 URL 的裸错误
+   * (如 ssl_client_socket 握手失败),易被误判为应用自身问题——实际上拖拽等
+   * 交互不发起任何网络请求,失败来自站点/代理/网络环境。挂上归因日志后可定位
+   * 失败 URL。net::ERR_ABORTED 是页面取消请求的正常噪音,跳过。
+   */
+  private netLogged = new WeakSet<Electron.Session>()
+  private attachNetErrorLog(ses: Electron.Session): void {
+    if (this.netLogged.has(ses)) return
+    this.netLogged.add(ses)
+    ses.webRequest.onErrorOccurred(d => {
+      console.warn(`[net] ${d.resourceType} ${d.error} ${d.url}`)
+    })
+  }
+
+  /**
    * 展开预热:换形动画开始时(悬浮窗仍隐藏)按最近布局重建/挂载站点视图,
    * 休眠销毁的视图此刻重建并开始加载,加载过程藏在鲸鱼外壳与 retire 延迟之后,
    * 避免悬浮窗揭示后用户看着页面白屏加载(展开闪烁)。
@@ -307,6 +322,7 @@ export class ViewManager {
     const ses = session.fromPartition(`persist:provider-${provider.id}`)
     ses.setUserAgent(provider.userAgent || DEFAULT_UA)
     ses.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
+    this.attachNetErrorLog(ses)
 
     const view = new WebContentsView({
       webPreferences: {

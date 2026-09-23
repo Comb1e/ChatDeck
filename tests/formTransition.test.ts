@@ -311,4 +311,10 @@ describe('native form coordinator', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(h.commands.slice(countAtCancel).filter(c => c.command.type === 'prepare')).toHaveLength(0)
   })
+
+  it('covered 延迟永不短于兜底外壳的淡入时长(否则悬浮窗被隐藏时外壳还没盖满)', () => {
+    expect(FORM_CONFIG.coveredDelayMs).toBeGreaterThanOrEqual(FORM_CONFIG.coverMs)
+    // 截图外壳路径的短等待只承担合成器提交余量,不需要等淡入
+    expect(FORM_CONFIG.coveredShotDelayMs).toBeLessThan(FORM_CONFIG.coveredDelayMs)
+  })
 })

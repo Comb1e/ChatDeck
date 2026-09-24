@@ -1,5 +1,29 @@
 # 迭代记录
 
+## v0.10.4（2026-09-23）
+
+功能（用户请求）：余额显示底部添加 CPU、内存使用率，以及显卡（独立显卡）的利用率和显存使用率。
+
+### 实现要点
+
+- 数据面 `main/systemMonitor.ts`：CPU 用 `os.cpus()` 两次采样间的时间片增量（增量窗口 ≥800ms，过近复用上次值；负增量视为计数器重置丢弃但推进基准）；内存 `os.totalmem/freemem`；独立显卡走 `nvidia-smi --query-gpu=name,utilization.gpu,memory.used,memory.total`（PATH/System32/NVSMI 三处探测并缓存命中路径，失败 10s 内沿用上次成功值防单次抖动闪烁）。deps（时钟/核心/内存/GPU 查询）全部可注入，采样策略有单测。
+- 纯逻辑 `shared/systemStats.ts`：nvidia-smi CSV 解析（名称可能含逗号，从行尾匹配最后三个数字字段）、CPU 增量、GB/MiB 格式化，主/渲染/测试三方共用。
+- IPC 走标准四处接线（`system:get-stats` → api → preload → main handler），并发 snapshot 合并为一次采样。
+- 渲染层（balance/widget.ts）：展开卡片底部「系统监控行」，仅在展开且窗口可见时 2s 轮询（`document.hidden` 跟随窗口隐藏，收起/编辑视图即停采，不让 nvidia-smi 空转）；GPU 行 tooltip 显示显卡全名。
+- 布局教训：单行四列在 372 宽卡片里必然把「18.9 / 31.6 GB」截断成省略号，改为 2×2 网格后全部放得下。
+
+### 验证结果
+
+- typecheck 三工程通过；Vitest **286/286**（新增 20 例：CSV 解析真实样例/引号逗号名称/CRLF/钳制/空值，CPU 增量与重置边界，格式化边界，SystemMonitor 基准不推进/GPU last-good 窗口/并发合并）。
+- dev 实测（隔离 userData + 预置 `window.visible:true` 走自动展开路径）：卡片底部 2×2 监控行完整渲染；GPU/显存与 `nvidia-smi` CLI 交叉核对一致（624 MiB → 0.6/8.0 GB）；CPU 值跨帧更新（22%→14%→17%→15%）证明轮询在跑；CDP 实测收起→再展开：pill 正常、统计行显隐与窗口高度正确、轮询恢复。
+- 临时验证目录/脚本用后即删并核实零残留；dev electron 进程清零。
+
+### 遗留问题与验证边界
+
+- 显卡数据源仅覆盖 NVIDIA（本机 RTX 4070 Laptop 实测）；AMD/Intel 独显无 nvidia-smi 等价物，Windows 性能计数器（Get-Counter）在中文系统有计数器名本地化问题，未做回退——此类机器 GPU/显存显示 —。
+- CPU 占用首帧为 —（无增量基准），第二次轮询（2s 后）起出值，属预期。
+- nvidia-smi 每 2s 一次进程派生（仅在卡片展开且可见时），实测开销可忽略；若未来发现异常再改主进程常驻采样。
+
 ## v0.10.3（2026-09-23）
 
 修复（用户反馈）：①「从悬浮窗到桌宠的收回有延迟，按下收回按钮后会停一小段时间才开始收回」；②「拖动鲸鱼时触发 ssl_client_socket_impl handshake failed（SSL error code 1, net_error -100）」；③ 过程性请求：把逐帧截图验证固化成仓库脚本，并沿用既有的鲸鱼钉住模式（`CHATDECK_WHALE_PINNED=1`）做可复现验证。

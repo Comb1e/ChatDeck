@@ -161,6 +161,18 @@ body { padding: 6px; }
 }
 .pill-used:hover { color: var(--accent-deep); }
 
+/* 胶囊底行系统速览:百分比一行(dim),挂在 pillGroups 列末尾,容量详情走悬停 */
+.pill-sys {
+  padding: 5px 0 2px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- 展开态卡片 ---------- */
 
 #card {

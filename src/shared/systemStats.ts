@@ -104,3 +104,19 @@ export function formatVramPair(usedMb: number, totalMb: number): string {
     ? `${(usedMb / 1024).toFixed(1)} / ${(totalMb / 1024).toFixed(1)} GB`
     : '—'
 }
+
+/** 占用百分比（used/total × 100）；无效输入返回 null */
+export function usagePercent(used: number, total: number): number | null {
+  if (![used, total].every((v) => Number.isFinite(v) && v >= 0) || total <= 0) return null
+  return clampPercent((used / total) * 100)
+}
+
+/** 收起态胶囊速览行："CPU 22% · 内存 63% · GPU 45% · 显存 11%"（容量详情走悬停） */
+export function formatPillStats(s: SystemStats): string {
+  return [
+    `CPU ${formatStatPercent(s.cpuPercent)}`,
+    `内存 ${formatStatPercent(usagePercent(s.memUsedBytes, s.memTotalBytes))}`,
+    `GPU ${formatStatPercent(s.gpu?.utilPercent ?? null)}`,
+    `显存 ${s.gpu ? formatStatPercent(usagePercent(s.gpu.vramUsedMb, s.gpu.vramTotalMb)) : '—'}`
+  ].join(' · ')
+}

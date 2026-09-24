@@ -19,6 +19,7 @@ import type {
 } from './balance'
 import type { TranslateConfig, TranslatePairId, TranslatePopupState } from './translate'
 import type { FormCommand, FormReport } from './formTransition'
+import type { SystemStats } from './systemStats'
 
 /** 主进程 → 鲸鱼渲染层的行为命令 */
 export type WhaleCommand = { type: 'jump-dive' } | { type: 'surface'; x: number; y: number }
@@ -135,6 +136,10 @@ export interface DeckApi {
     /** 弹窗冷启动兜底:取最近一次推送的状态 */
     getLast(): Promise<TranslatePopupState | null>
     hide(): Promise<boolean>
+  }
+  /** 系统监控(余额卡片底部监控行;主进程按需采样) */
+  system: {
+    getStats(): Promise<SystemStats>
   }
   /** 主进程 → 译文弹窗渲染层事件(仅弹窗会收到) */
   on: {

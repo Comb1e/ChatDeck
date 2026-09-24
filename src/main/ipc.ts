@@ -16,6 +16,7 @@ import type { BillingWindowController } from './balance/billing-window'
 import type { UsageStore } from './balance/usage'
 import type { BillDb } from './balance/billdb'
 import { buildBillingReport } from './balance/billing'
+import type { SystemMonitor } from './systemMonitor'
 import type { SettingsWindowController } from './settingsWindow'
 import type { TranslateService } from './translateService'
 import type { TranslatePopupController } from './translateWindow'
@@ -35,6 +36,7 @@ export interface IpcDeps {
   billingWin: BillingWindowController
   balanceUsage: UsageStore
   balanceBills: BillDb
+  systemMonitor: SystemMonitor
   settingsWin: SettingsWindowController
   translate: TranslateService
   translateWin: TranslatePopupController
@@ -55,6 +57,7 @@ export function registerIpc(deps: IpcDeps): void {
     billingWin,
     balanceUsage,
     balanceBills,
+    systemMonitor,
     settingsWin,
     translate,
     translateWin,
@@ -284,6 +287,10 @@ export function registerIpc(deps: IpcDeps): void {
   ipcMain.on(IPC.BalanceResize, (_e, size: { width?: unknown; height?: unknown }) => {
     balanceWin.setContentSize(Number(size?.width) || 0, Number(size?.height) || 0)
   })
+
+  // ---- 系统监控(余额卡片底部监控行) ----
+
+  ipcMain.handle(IPC.SystemGetStats, () => systemMonitor.snapshot())
 
   // ---- 划词翻译 ----
 

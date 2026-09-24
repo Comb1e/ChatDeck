@@ -53,6 +53,17 @@
             <button id="btnBilling" class="btn ghost">账单</button>
             <button id="btnAddBottom" class="btn ghost">添加站点</button>
           </div>
+
+          <!-- 系统监控行:CPU/内存/独立显卡,展开态轮询,收起与编辑视图不占位 -->
+          <div id="sysStats" hidden>
+            <div class="rows-divider"></div>
+            <div class="sys-row" id="sysRow">
+              <div class="sys-cell"><span class="sys-label">CPU</span><span class="sys-value" id="sysCpu">—</span></div>
+              <div class="sys-cell"><span class="sys-label">内存</span><span class="sys-value" id="sysMem">—</span></div>
+              <div class="sys-cell"><span class="sys-label">GPU</span><span class="sys-value" id="sysGpu">—</span></div>
+              <div class="sys-cell"><span class="sys-label">显存</span><span class="sys-value" id="sysVram">—</span></div>
+            </div>
+          </div>
         </section>
 
         <!-- 站点编辑视图 -->

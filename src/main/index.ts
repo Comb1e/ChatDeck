@@ -14,6 +14,7 @@ import { WhaleWindowController } from './whaleWindow'
 import { SettingsWindowController } from './settingsWindow'
 import { TrayController } from './tray'
 import { registerIpc } from './ipc'
+import { createSystemMonitor } from './systemMonitor'
 import { TranslateService } from './translateService'
 import { TranslatePopupController } from './translateWindow'
 import { captureSelectedText } from './textCapture'
@@ -69,6 +70,8 @@ const balanceWin = new BalanceWindowController({
   store: balanceStore,
   onVisibilityChanged: (visible) => tray?.setBalanceChecked(visible)
 })
+// 系统监控(CPU/内存/独立显卡):余额卡片底部监控行的数据面,渲染层展开时轮询
+const systemMonitor = createSystemMonitor()
 // 账单窗口:余额明细(每月用量),由余额卡片/胶囊/设置窗口入口打开,关闭即销毁
 const billingWin = new BillingWindowController()
 const settingsWin = new SettingsWindowController()
@@ -161,6 +164,7 @@ async function bootstrap(): Promise<void> {
     billingWin,
     balanceUsage,
     balanceBills,
+    systemMonitor,
     settingsWin,
     translate,
     translateWin,

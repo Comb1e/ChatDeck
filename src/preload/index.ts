@@ -13,6 +13,7 @@ import type {
   BillingReport
 } from '@shared/balance'
 import type { TranslateConfig, TranslatePairId, TranslatePopupState } from '@shared/translate'
+import type { SystemStats } from '@shared/systemStats'
 
 /**
  * 渲染层唯一可用的宿主 API。所有方法返回 Promise（send 型也包装为 Promise 以便统一风格）。
@@ -100,6 +101,9 @@ const api: DeckApi = {
     setPair: (pair: TranslatePairId): void => ipcRenderer.send(IPC.TranslateSetPair, pair),
     getLast: () => ipcRenderer.invoke(IPC.TranslateGetLast) as Promise<TranslatePopupState | null>,
     hide: () => ipcRenderer.invoke(IPC.TranslateHide) as Promise<boolean>
+  },
+  system: {
+    getStats: () => ipcRenderer.invoke(IPC.SystemGetStats) as Promise<SystemStats>
   },
   on: {
     translateResult: (cb: (state: TranslatePopupState) => void): void => {

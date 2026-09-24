@@ -16,7 +16,12 @@ import type {
 } from '@shared/balance'
 import { formatBalance } from '@shared/balance'
 import type { SystemStats } from '@shared/systemStats'
-import { formatMemPair, formatStatPercent, formatVramPair } from '@shared/systemStats'
+import {
+  formatMemPair,
+  formatPillStats,
+  formatStatPercent,
+  formatVramPair
+} from '@shared/systemStats'
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
 
@@ -163,6 +168,8 @@ function renderPill(sites: BalanceSiteState[]): void {
       els.pillGroups.appendChild(g)
     }
   }
+  // 系统速览行固定挂在站点行下方(渲染每次重建 pillGroups,需要重新追加)
+  els.pillGroups.appendChild(pillSysRow)
   renderPillUsed(visible)
   // 单行保持胶囊形,多行切大圆角卡片形
   els.pill.style.borderRadius = els.pillGroups.children.length > 1 ? '18px' : '999px'
@@ -540,7 +547,7 @@ function expand(): void {
   view = 'list'
   els.card.hidden = false
   showView()
-  setSysPolling(true)
+  els.sysStats.hidden = false
   applySize() // 系统监控行显形后再测一次,窗口高度把这一行算进去
 }
 
@@ -549,7 +556,7 @@ function collapse(): void {
   els.card.hidden = true
   els.pill.style.display = 'flex'
   els.app.style.width = ''
-  setSysPolling(false)
+  els.sysStats.hidden = true
   applySize()
 }
 
@@ -621,24 +628,43 @@ window.addEventListener('keydown', (e) => {
   }
 })
 
-// ---------- 系统监控(展开卡片底部) ----------
+// ---------- 系统监控(胶囊速览行 + 展开卡片 2×2) ----------
 
 const SYS_POLL_MS = 2000
 let sysTimer: number | undefined
 
+// 收起态速览行:挂在 pillGroups 列末尾,dim 百分比一行,容量详情走悬停
+const pillSysRow = document.createElement('div')
+pillSysRow.className = 'pill-sys'
+pillSysRow.hidden = true
+
+function sysDetailTitle(s: SystemStats): string {
+  return [
+    s.gpu ? s.gpu.name : '未检测到独立显卡数据(需要 NVIDIA 驱动)',
+    s.gpu ? `显存 ${formatVramPair(s.gpu.vramUsedMb, s.gpu.vramTotalMb)}` : '',
+    `内存 ${formatMemPair(s.memUsedBytes, s.memTotalBytes)}`
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
 function renderSysStats(s: SystemStats): void {
+  pillSysRow.textContent = formatPillStats(s)
+  pillSysRow.hidden = false
   els.sysCpu.textContent = formatStatPercent(s.cpuPercent)
   els.sysMem.textContent = formatMemPair(s.memUsedBytes, s.memTotalBytes)
   els.sysGpu.textContent = formatStatPercent(s.gpu?.utilPercent ?? null)
   els.sysVram.textContent = s.gpu ? formatVramPair(s.gpu.vramUsedMb, s.gpu.vramTotalMb) : '—'
-  els.sysRow.title = s.gpu
-    ? `${s.gpu.name} · 显存 ${formatVramPair(s.gpu.vramUsedMb, s.gpu.vramTotalMb)}`
-    : '未检测到独立显卡数据(需要 NVIDIA 驱动)'
+  els.sysRow.title = sysDetailTitle(s)
+  pillSysRow.title = sysDetailTitle(s)
+  // 速览行首次显形会撑高胶囊(尺寸测量早于首轮采样数据),按当前视图重测窗口;
+  // 编辑视图不重排,同 render 的防打断保护
+  if (view !== 'edit') applySize()
 }
 
 async function pollSysStats(): Promise<void> {
-  // 窗口隐藏(Electron 下 document.hidden 跟随 hide())/收起态时停采,不让 nvidia-smi 空转
-  if (document.hidden || !expanded) return
+  // 窗口隐藏(Electron 下 document.hidden 跟随 hide())时停采,不让 nvidia-smi 空转
+  if (document.hidden) return
   try {
     renderSysStats(await sysApi.getStats())
   } catch {
@@ -646,21 +672,14 @@ async function pollSysStats(): Promise<void> {
   }
 }
 
-function setSysPolling(on: boolean): void {
-  els.sysStats.hidden = !on
-  if (on) {
-    void pollSysStats()
-    if (sysTimer === undefined) {
-      sysTimer = window.setInterval(() => void pollSysStats(), SYS_POLL_MS)
-    }
-  } else if (sysTimer !== undefined) {
-    window.clearInterval(sysTimer)
-    sysTimer = undefined
-  }
+function startSysPolling(): void {
+  if (sysTimer !== undefined) return
+  void pollSysStats()
+  sysTimer = window.setInterval(() => void pollSysStats(), SYS_POLL_MS)
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && expanded) void pollSysStats()
+  if (!document.hidden) void pollSysStats()
 })
 
 // ---------- 启动 ----------
@@ -676,6 +695,7 @@ async function init(): Promise<void> {
   await refreshDescriptions()
   render(await api.getState())
   window.api.onBalance.state(render)
+  startSysPolling() // 胶囊速览行与卡片监控行共用:窗口可见即轮询
   const unconfigured = state.sites.filter((s) => s.enabled && s.status === 'no-token')
   if (unconfigured.length === state.sites.length && state.sites.length) {
     expand() // 首次使用:全部未配置时直接展示列表引导

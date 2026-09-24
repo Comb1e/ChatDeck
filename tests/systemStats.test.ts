@@ -3,12 +3,14 @@ import {
   clampPercent,
   cpuUsagePercent,
   formatMemPair,
+  formatPillStats,
   formatStatPercent,
   formatVramPair,
   parseNvidiaSmi,
-  sumCpuTimes
+  sumCpuTimes,
+  usagePercent
 } from '../src/shared/systemStats'
-import type { CpuSample } from '../src/shared/systemStats'
+import type { CpuSample, SystemStats } from '../src/shared/systemStats'
 
 describe('sumCpuTimes', () => {
   it('累计全部核心的 idle 与总时间片', () => {
@@ -91,6 +93,36 @@ describe('展示格式化', () => {
     expect(formatMemPair(-1, 100)).toBe('—')
     expect(formatMemPair(5, 0)).toBe('—')
     expect(formatVramPair(1, 0)).toBe('—')
+  })
+})
+
+describe('usagePercent', () => {
+  it('used/total 百分比并钳到 0-100', () => {
+    expect(usagePercent(25, 100)).toBe(25)
+    expect(usagePercent(0, 100)).toBe(0)
+    expect(usagePercent(150, 100)).toBe(100)
+  })
+  it('无效输入(总量 0/负数/NaN)为 null', () => {
+    expect(usagePercent(1, 0)).toBeNull()
+    expect(usagePercent(-1, 100)).toBeNull()
+    expect(usagePercent(NaN, 100)).toBeNull()
+  })
+})
+
+describe('formatPillStats', () => {
+  const full: SystemStats = {
+    cpuPercent: 22.4,
+    memUsedBytes: 0.63 * 2 ** 30,
+    memTotalBytes: 2 ** 30,
+    gpu: { name: 'RTX', utilPercent: 45, vramUsedMb: 819, vramTotalMb: 8188 }
+  }
+  it('四项百分比速览行,分隔符统一', () => {
+    expect(formatPillStats(full)).toBe('CPU 22% · 内存 63% · GPU 45% · 显存 10%')
+  })
+  it('无显卡/无数据时全部占位符', () => {
+    expect(formatPillStats({ cpuPercent: null, memUsedBytes: 0, memTotalBytes: 0, gpu: null })).toBe(
+      'CPU — · 内存 — · GPU — · 显存 —'
+    )
   })
 })
 

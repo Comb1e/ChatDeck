@@ -15,6 +15,8 @@ import type {
   BalanceSnapshot
 } from '@shared/balance'
 import { formatBalance } from '@shared/balance'
+import type { SystemStats } from '@shared/systemStats'
+import { formatMemPair, formatStatPercent, formatVramPair } from '@shared/systemStats'
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
 
@@ -36,6 +38,12 @@ const els = {
   btnRefreshAll: $('btnRefreshAll'),
   btnBilling: $('btnBilling'),
   btnAddBottom: $('btnAddBottom'),
+  sysStats: $('sysStats'),
+  sysRow: $('sysRow'),
+  sysCpu: $('sysCpu'),
+  sysMem: $('sysMem'),
+  sysGpu: $('sysGpu'),
+  sysVram: $('sysVram'),
   editView: $('editView'),
   editTitle: $('editTitle'),
   typeField: $('typeField'),
@@ -76,6 +84,7 @@ let editingIsNew = false
 const lastGood = new Map<string, string>() // id -> '$X.XX'
 
 const api = window.api.balance
+const sysApi = window.api.system
 
 // ---------- 渲染:胶囊 ----------
 
@@ -529,9 +538,10 @@ function expand(): void {
   expanded = true
   els.pill.style.display = 'none'
   view = 'list'
-  showView()
   els.card.hidden = false
-  applySize()
+  showView()
+  setSysPolling(true)
+  applySize() // 系统监控行显形后再测一次,窗口高度把这一行算进去
 }
 
 function collapse(): void {
@@ -539,6 +549,7 @@ function collapse(): void {
   els.card.hidden = true
   els.pill.style.display = 'flex'
   els.app.style.width = ''
+  setSysPolling(false)
   applySize()
 }
 
@@ -608,6 +619,48 @@ window.addEventListener('keydown', (e) => {
       collapse()
     }
   }
+})
+
+// ---------- 系统监控(展开卡片底部) ----------
+
+const SYS_POLL_MS = 2000
+let sysTimer: number | undefined
+
+function renderSysStats(s: SystemStats): void {
+  els.sysCpu.textContent = formatStatPercent(s.cpuPercent)
+  els.sysMem.textContent = formatMemPair(s.memUsedBytes, s.memTotalBytes)
+  els.sysGpu.textContent = formatStatPercent(s.gpu?.utilPercent ?? null)
+  els.sysVram.textContent = s.gpu ? formatVramPair(s.gpu.vramUsedMb, s.gpu.vramTotalMb) : '—'
+  els.sysRow.title = s.gpu
+    ? `${s.gpu.name} · 显存 ${formatVramPair(s.gpu.vramUsedMb, s.gpu.vramTotalMb)}`
+    : '未检测到独立显卡数据(需要 NVIDIA 驱动)'
+}
+
+async function pollSysStats(): Promise<void> {
+  // 窗口隐藏(Electron 下 document.hidden 跟随 hide())/收起态时停采,不让 nvidia-smi 空转
+  if (document.hidden || !expanded) return
+  try {
+    renderSysStats(await sysApi.getStats())
+  } catch {
+    // 采样失败保持上一次数值,下一轮再试
+  }
+}
+
+function setSysPolling(on: boolean): void {
+  els.sysStats.hidden = !on
+  if (on) {
+    void pollSysStats()
+    if (sysTimer === undefined) {
+      sysTimer = window.setInterval(() => void pollSysStats(), SYS_POLL_MS)
+    }
+  } else if (sysTimer !== undefined) {
+    window.clearInterval(sysTimer)
+    sysTimer = undefined
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && expanded) void pollSysStats()
 })
 
 // ---------- 启动 ----------

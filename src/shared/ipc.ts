@@ -73,6 +73,9 @@ export const IPC = {
   /** 渲染层按内容测量的窗口尺寸(主进程按工作区钳制) */
   BalanceResize: 'balance:resize',
 
+  // 系统监控(余额卡片底部监控行;主进程按需采样)
+  SystemGetStats: 'system:get-stats',
+
   // 划词翻译(配置在设置窗口填写;结果推给译文弹窗渲染层)
   TranslateGetConfig: 'translate:get-config',
   TranslateSaveConfig: 'translate:save-config',
